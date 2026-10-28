@@ -1,0 +1,45 @@
+{
+  "name": "anoterm",
+  "private": true,
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "type": "module",
+  "packageManager": "pnpm@10.28.1",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "version": "node scripts/set-version.mjs",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "format": "prettier --write \"src/**/*.{ts,vue,css}\" \"*.{ts,json}\" \".github/**/*.yml\" \"index.html\"",
+    "format:check": "prettier --check \"src/**/*.{ts,vue,css}\" \"*.{ts,json}\" \".github/**/*.yml\" \"index.html\""
+  },
+  "dependencies": {
+    "@lucide/vue": "^1.40.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2.7.2",
+    "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.11.0",
+    "@vueuse/core": "^14.4.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "reka-ui": "^2.10.4",
+    "tailwind-merge": "^3.6.0",
+    "tailwindcss": "^4.3.3",
+    "tw-animate-css": "^1.4.0",
+    "vue": "^3.5.13",
+    "vue-sonner": "^2.0.9"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "prettier": "^3.9.9",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.3",
+    "vue-tsc": "^2.1.10"
+  }
+}

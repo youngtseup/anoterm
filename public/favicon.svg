@@ -1,0 +1,62 @@
+<svg width="32" height="32" viewBox="0 0 1024 1024"
+     xmlns="http://www.w3.org/2000/svg">
+
+    <!-- Background -->
+    <rect width="1024" height="1024" rx="220" fill="#050505"/>
+
+
+    <!-- Mirrored SSH tunnel ring -->
+    <path d="
+M512 160
+C704 160 854 315 854 512
+C854 700 704 850 512 850
+"
+          stroke="white"
+          stroke-width="42"
+          stroke-linecap="round"
+          fill="none"/>
+
+    <path d="
+M512 160
+C324 160 170 315 170 512
+"
+          stroke="white"
+          stroke-width="42"
+          stroke-linecap="round"
+          fill="none"/>
+
+
+    <!-- Remote endpoint -->
+    <circle cx="170" cy="512" r="58"
+            fill="#050505"
+            stroke="white"
+            stroke-width="20"/>
+
+    <circle cx="170" cy="512" r="18"
+            fill="white"/>
+
+
+    <!-- Terminal > (shifted left) -->
+    <path d="
+M330 390
+L480 512
+L330 634
+"
+          stroke="white"
+          stroke-width="62"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          fill="none"/>
+
+
+    <!-- Underscore (more compact) -->
+    <path d="
+M555 620
+H690
+"
+          stroke="white"
+          stroke-width="62"
+          stroke-linecap="round"/>
+
+
+</svg>

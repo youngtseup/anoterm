@@ -1,0 +1,151 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            args: ""
+            rust_targets: ""
+          - platform: macos-latest
+            args: "--target universal-apple-darwin"
+            rust_targets: "aarch64-apple-darwin,x86_64-apple-darwin"
+          - platform: ubuntu-22.04
+            args: ""
+            rust_targets: ""
+          - platform: ubuntu-22.04-arm
+            args: ""
+            rust_targets: ""
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify tag matches app version
+        shell: bash
+        run: |
+          APP_VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          if [ "v${APP_VERSION}" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::tag (${GITHUB_REF_NAME}) 与 tauri.conf.json 版本 (v${APP_VERSION}) 不一致，请先同步版本号"
+            exit 1
+          fi
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install Linux dependencies
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev xdg-utils libfuse2
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and upload to draft release
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: v__VERSION__
+          releaseName: "Anoterm v__VERSION__"
+          releaseBody: |
+            ## 安装包（普通用户下载）
+
+            - Windows：`Anoterm_*_x64-setup.exe`
+            - macOS：`Anoterm_*_universal.dmg`
+            - Linux：`.deb` / `.AppImage`
+
+            ## 说明
+
+            - `latest.json` 与应用内「检查更新」使用的更新包（macOS 的 `.app.tar.gz`）请勿手动安装
+            - 本版本安装包未做代码签名：Windows 可能出现 SmartScreen 提示（选择"仍要运行"）；macOS 首次打开需右键 → 打开
+          releaseDraft: true
+          prerelease: false
+          retryAttempts: 3
+          uploadUpdaterJson: false
+          args: ${{ matrix.args }}
+
+  updater-manifest:
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Read app version
+        id: version
+        run: echo "value=$(jq -r .version src-tauri/tauri.conf.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Download update signatures from draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p sigs
+          gh release download "v${{ steps.version.outputs.value }}" \
+            --pattern "*.exe.sig" \
+            --pattern "*.app.tar.gz.sig" \
+            --pattern "*.AppImage.sig" \
+            --dir sigs
+
+      - name: Generate latest.json
+        run: |
+          node scripts/make-latest-json.mjs \
+            --version "${{ steps.version.outputs.value }}" \
+            --tag "v${{ steps.version.outputs.value }}" \
+            --repo "${{ github.repository }}" \
+            --sigs-dir sigs \
+            --out latest.json \
+            --notes "Anoterm v${{ steps.version.outputs.value }}"
+
+      - name: Upload latest.json to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "v${{ steps.version.outputs.value }}" latest.json --clobber
+
+      - name: Remove unused deb/rpm signatures
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="v${{ steps.version.outputs.value }}"
+          gh release view "$tag" --json assets --jq '.assets[].name' \
+            | grep -E '\.(deb|rpm)\.sig$' \
+            | while read -r name; do
+                gh release delete-asset "$tag" "$name" --yes
+              done || true

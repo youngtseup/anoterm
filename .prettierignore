@@ -1,0 +1,8 @@
+# shadcn-vue 生成组件（vendored，保持 CLI 原样）
+src/components/ui
+
+# 构建产物与依赖
+dist
+node_modules
+src-tauri
+pnpm-lock.yaml
