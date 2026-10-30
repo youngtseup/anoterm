@@ -1,6 +1,7 @@
 <template>
   <header
-    class="z-100 flex h-10 shrink-0 items-center justify-between border-b border-border bg-background pl-4 shadow-sm select-none"
+    class="z-100 flex h-10 shrink-0 items-center justify-between border-b border-border bg-background shadow-sm select-none"
+    :class="isMac ? 'pl-20' : 'pl-4'"
     @mousedown="handleDrag"
   >
     <div class="flex items-center gap-2.5">
@@ -60,7 +61,7 @@
           </Tooltip>
         </div>
 
-        <div class="flex items-center self-stretch">
+        <div v-if="!isMac" class="flex items-center self-stretch">
           <button class="window-control" title="最小化" @click="minimize">
             <Minus class="size-4" />
           </button>
@@ -83,9 +84,10 @@
 
 <script setup lang="ts">
 /**
- * 自定义标题栏（窗口无系统装饰）：
- * - 左侧：Logo、标题
- * - 右侧：GitHub、检查更新、主题切换、窗口控制（最小化/最大化/关闭）
+ * 自定义标题栏：
+ * - Windows/Linux：窗口无系统装饰，右侧绘制最小化/最大化/关闭
+ * - macOS：窗口保留系统标题栏（Overlay + 隐藏标题），使用原生左侧交通灯，
+ *   左侧留白避让，右侧仅保留功能按钮
  * - 空白区域按下可拖动窗口（button 等选择器内的控件除外），双击最大化
  */
 import { onMounted, ref } from "vue";
@@ -103,6 +105,9 @@ const emit = defineEmits<{
   toggleTheme: [];
   checkUpdate: [];
 }>();
+
+/** macOS 使用系统原生窗口控制按钮（交通灯在左侧） */
+const isMac = navigator.userAgent.toLowerCase().includes("mac");
 
 const GITHUB_URL = "https://github.com/youngtseup/anoterm";
 

@@ -56,13 +56,27 @@ pub fn run() {
             app.manage(Transfers::default());
 
             // 主窗口在代码中创建：配置窗口不支持开启 WebView 剪贴板访问
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+            let mut window = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
                 .title("Anoterm")
                 .inner_size(1325.0, 805.0)
                 .center()
-                .decorations(false)
-                .enable_clipboard_access()
-                .build()?;
+                .enable_clipboard_access();
+
+            // macOS 使用系统原生标题栏（交通灯在左侧），内容覆盖到标题栏下方；
+            // 其他平台保持无边框，由前端 TitleBar 绘制窗口控制按钮
+            #[cfg(target_os = "macos")]
+            {
+                window = window
+                    .decorations(true)
+                    .title_bar_style(tauri::TitleBarStyle::Overlay)
+                    .hidden_title(true);
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                window = window.decorations(false);
+            }
+
+            window.build()?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
