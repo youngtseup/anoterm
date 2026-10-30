@@ -121,17 +121,28 @@
         </div>
         <div class="grid grid-cols-[80px_1fr] items-center gap-3">
           <Label>分组</Label>
-          <Select v-model="groupValue">
-            <SelectTrigger class="w-full">
-              <SelectValue placeholder="选择分组" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem :value="UNGROUPED_VALUE">不分组</SelectItem>
-              <SelectItem v-for="g in selectableGroups" :key="g.id" :value="g.id">
-                {{ g.name }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
+          <div class="relative">
+            <Select v-model="groupValue">
+              <SelectTrigger class="w-full">
+                <SelectValue placeholder="请选择分组" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="g in selectableGroups" :key="g.id" :value="g.id">
+                  {{ g.name }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <button
+              v-if="form.groupId"
+              type="button"
+              class="absolute top-1/2 right-9 z-10 -translate-y-1/2 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              title="清除分组"
+              aria-label="清除分组"
+              @click="clearGroup"
+            >
+              <X class="size-3.5" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -183,7 +194,7 @@
  * - 提交校验：名称必填；分组可选；私钥模式还需私钥文件路径
  */
 import { computed, ref, watch } from "vue";
-import { CircleAlert, CircleCheck, CircleX, Eye, EyeOff, Loader2 } from "@lucide/vue";
+import { CircleAlert, CircleCheck, CircleX, Eye, EyeOff, Loader2, X } from "@lucide/vue";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { EMPTY_CONN_INPUT, isUngroupedGroup } from "../types";
@@ -222,14 +233,17 @@ const open = computed({
 
 const form = ref<AddConnInput>({ ...EMPTY_CONN_INPUT });
 const portText = ref(String(EMPTY_CONN_INPUT.port));
-/** Select 不接受空字符串 value，用哨兵值表示“不分组” */
-const UNGROUPED_VALUE = "__no_group__";
-const groupValue = computed({
-  get: () => form.value.groupId || UNGROUPED_VALUE,
-  set: (value: string) => {
-    form.value.groupId = value === UNGROUPED_VALUE ? "" : value;
+/** 空字符串不是合法选项，未分组时用 undefined 让 Select 展示占位文本 */
+const groupValue = computed<string | undefined>({
+  get: () => form.value.groupId || undefined,
+  set: (value) => {
+    form.value.groupId = value ?? "";
   },
 });
+
+function clearGroup() {
+  form.value.groupId = "";
+}
 const selectableGroups = computed(() => props.groups.filter((g) => !isUngroupedGroup(g)));
 const showPassword = ref(false);
 const errorMsg = ref("");
