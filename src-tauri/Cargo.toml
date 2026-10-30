@@ -1,6 +1,6 @@
 [package]
 name = "Anoterm"
-version = "0.1.0"
+version = "0.1.1"
 description = "Anoterm - SSH/SFTP 连接管理终端"
 authors = ["youngtse"]
 license = "Apache-2.0"
