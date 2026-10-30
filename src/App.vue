@@ -222,7 +222,7 @@
   - 职责：数据加载与 CRUD、tab 生命周期编排，具体会话逻辑下沉到 ConnectionView
 -->
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, markRaw, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { toast } from "vue-sonner";
 import { ArrowLeft, ArrowRight, Loader2 } from "@lucide/vue";
 import { invoke } from "@tauri-apps/api/core";
@@ -561,6 +561,7 @@ const checkingUpdate = ref(false);
 const updateOpen = ref(false);
 const updatePhase = ref<"confirm" | "downloading">("confirm");
 const updateProgress = ref(0);
+/** Update 实例使用 WeakMap 私有字段，不能被 Vue 响应式代理包裹（否则调用 update 方法时报错） */
 const updateInfo = ref<{ version: string; body?: string; update: Update } | null>(null);
 
 /** 判断当前是否为 Windows（Windows 下安装完成后应用会自动退出运行安装器） */
@@ -577,7 +578,11 @@ async function handleCheckUpdate() {
       toast.success("当前已是最新版本");
       return;
     }
-    updateInfo.value = { version: update.version, body: update.body ?? undefined, update };
+    updateInfo.value = {
+      version: update.version,
+      body: update.body ?? undefined,
+      update: markRaw(update),
+    };
     updatePhase.value = "confirm";
     updateOpen.value = true;
   } catch (e) {
