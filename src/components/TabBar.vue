@@ -78,7 +78,7 @@
       />
     </DropdownMenuTrigger>
     <DropdownMenuContent side="right" align="start" :side-offset="0" class="min-w-36">
-      <DropdownMenuLabel>SFTP 布局</DropdownMenuLabel>
+      <DropdownMenuLabel>文件浏览器布局</DropdownMenuLabel>
       <DropdownMenuRadioGroup :model-value="sftpLayout" @update:model-value="setSftpLayout">
         <DropdownMenuRadioItem value="dual">双栏布局</DropdownMenuRadioItem>
         <DropdownMenuRadioItem value="single">单栏布局</DropdownMenuRadioItem>
