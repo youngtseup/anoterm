@@ -107,6 +107,24 @@
           </TableHeader>
           <TableBody>
             <TableRow
+              v-if="!isAtRoot"
+              key="__parent__"
+              class="cursor-default select-none hover:bg-muted/50"
+              title="返回上一级"
+              @dblclick="goUp"
+              @contextmenu.prevent
+            >
+              <TableCell>
+                <div class="flex items-center gap-1.5">
+                  <Folder class="size-4 shrink-0 text-amber-500" />
+                  <span class="truncate">..</span>
+                </div>
+              </TableCell>
+              <TableCell class="text-muted-foreground">—</TableCell>
+              <TableCell class="text-muted-foreground">—</TableCell>
+              <TableCell v-if="kind === 'remote' && layout === 'single'"></TableCell>
+            </TableRow>
+            <TableRow
               v-for="(row, index) in entries"
               :key="row.path"
               class="cursor-default"
