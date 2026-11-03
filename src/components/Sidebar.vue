@@ -42,8 +42,7 @@
           :key="`root-${conn.id}`"
           :data-conn-id="conn.id"
           :data-parent-group="UNGROUPED_GROUP_ID"
-          title="点击打开，长按拖动"
-          @click="handleConnClick(conn)"
+          @dblclick="handleConnClick(conn)"
           @pointerdown="
             onPointerDown($event, {
               kind: 'conn',
@@ -98,8 +97,7 @@
             :key="conn.id"
             :data-conn-id="conn.id"
             :data-parent-group="group.id"
-            title="点击打开，长按拖动"
-            @click="handleConnClick(conn)"
+            @dblclick="handleConnClick(conn)"
             @pointerdown="
               onPointerDown($event, {
                 kind: 'conn',

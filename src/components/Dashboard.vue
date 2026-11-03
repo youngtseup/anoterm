@@ -52,10 +52,10 @@
 
       <div v-if="recentConnections.length > 0" class="py-1">
         <div
-          class="flex cursor-pointer items-center justify-between px-5 py-3 transition-colors hover:bg-muted/60"
+          class="flex cursor-pointer items-center justify-between px-5 py-3 transition-colors select-none hover:bg-muted/60"
           v-for="(item, i) in recentConnections"
           :key="i"
-          @click="emit('select-recent', item.id)"
+          @dblclick="emit('select-recent', item.id)"
         >
           <div class="flex items-center gap-3">
             <div
@@ -86,7 +86,7 @@
 /**
  * 仪表盘（无 tab 时显示）：
  * - 统计卡片：分组数 / 连接数 / 已连接数
- * - 最近连接列表：点击重新打开连接，可清空
+ * - 最近连接列表：双击重新打开连接，可清空
  */
 import { computed } from "vue";
 import { CircleCheck, Coins, Folder, FolderOpen, Monitor, Plug } from "@lucide/vue";

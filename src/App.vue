@@ -546,7 +546,7 @@ async function handleReorder(order: TreeOrder) {
 }
 
 // ---------- 最近连接操作 ----------
-/** 点击最近连接：连接仍存在则打开，否则提示 */
+/** 双击最近连接：连接仍存在则打开，否则提示 */
 function handleSelectRecent(id: string) {
   const conn = getConnection(id);
   if (!conn) {
