@@ -11,6 +11,7 @@ use russh_sftp::protocol::OpenFlags;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::sync::oneshot;
 
 use crate::ssh::SshManager;
 
@@ -169,8 +170,10 @@ const CHUNK_SIZE: usize = 256 * 1024;
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
 /// 进度事件名（前端按 transferId 过滤）。
 const PROGRESS_EVENT: &str = "sftp-transfer-progress";
+/// 同名冲突事件名（前端按 transferId 过滤）。
+const CONFLICT_EVENT: &str = "sftp-transfer-conflict";
 
-/// 传输项：目录会递归处理；目录的 `dest` 表示要填充的目标目录。
+/// 传输项：目录会递归处理；`dest` 为最终目标路径（含名称）。
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TransferItem {
@@ -197,9 +200,45 @@ struct TransferProgress {
     total: u64,
 }
 
-/// 取消登记表：transfer_id -> 取消标记。
+/// 同名冲突处理策略（前端弹窗选择）。
+#[derive(Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ConflictChoice {
+    Overwrite,
+    Skip,
+    KeepBoth,
+    Cancel,
+}
+
+/// 前端对冲突弹窗的回复。
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConflictReply {
+    choice: ConflictChoice,
+    apply_all: bool,
+}
+
+/// 冲突事件负载。
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConflictPayload {
+    transfer_id: String,
+    direction: String,
+    source: String,
+    dest: String,
+    name: String,
+    is_dir: bool,
+    existing_is_dir: bool,
+}
+
+/// 传输登记表：取消标记与等待中的冲突决策。
 #[derive(Default)]
-pub struct Transfers(pub Mutex<HashMap<String, Arc<AtomicBool>>>);
+pub struct Transfers {
+    /// transfer_id -> 取消标记
+    flags: Mutex<HashMap<String, Arc<AtomicBool>>>,
+    /// transfer_id -> 冲突决策回信端（同一传输同一时刻最多一个冲突）
+    pending: Mutex<HashMap<String, oneshot::Sender<ConflictReply>>>,
+}
 
 /// 内部停止原因。
 enum Stop {
@@ -213,27 +252,42 @@ impl From<String> for Stop {
     }
 }
 
-/// 一次传输的进度上下文：累计字节、节流发送事件、检查取消。
+/// 一次传输的进度上下文：累计字节、节流发送事件、检查取消与冲突处理。
 struct TransferCtx<'a> {
     app: &'a AppHandle,
+    transfers: &'a Transfers,
     transfer_id: &'a str,
+    direction: &'static str,
     current: String,
     transferred: u64,
     total: u64,
     cancel: Arc<AtomicBool>,
     last_emit: Instant,
+    /// 用户勾选「应用于后续冲突」后的策略
+    conflict_policy: Option<ConflictChoice>,
 }
 
 impl<'a> TransferCtx<'a> {
-    fn new(app: &'a AppHandle, transfer_id: &'a str, total: u64, cancel: Arc<AtomicBool>) -> Self {
+    fn new(
+        app: &'a AppHandle,
+        transfers: &'a Transfers,
+        transfer_id: &'a str,
+        direction: &'static str,
+        total: u64,
+        cancel: Arc<AtomicBool>,
+        conflict_policy: Option<ConflictChoice>,
+    ) -> Self {
         Self {
             app,
+            transfers,
             transfer_id,
+            direction,
             current: String::new(),
             transferred: 0,
             total,
             cancel,
             last_emit: Instant::now(),
+            conflict_policy,
         }
     }
 
@@ -260,6 +314,66 @@ impl<'a> TransferCtx<'a> {
         } else {
             Ok(())
         }
+    }
+
+    /// 询问用户如何处理同名冲突；等待期间轮询取消标记，取消即可中断。
+    async fn ask_conflict(
+        &mut self,
+        source: &str,
+        dest: &str,
+        is_dir: bool,
+        existing_is_dir: bool,
+    ) -> Result<ConflictChoice, Stop> {
+        if let Some(policy) = self.conflict_policy {
+            return Ok(policy);
+        }
+
+        let name = display_name(dest);
+        self.set_current(&format!("同名冲突: {name}"));
+
+        let (tx, mut rx) = oneshot::channel();
+        {
+            let mut pending = self
+                .transfers
+                .pending
+                .lock()
+                .map_err(|e| Stop::Error(e.to_string()))?;
+            pending.insert(self.transfer_id.to_string(), tx);
+        }
+        let _ = self.app.emit(
+            CONFLICT_EVENT,
+            ConflictPayload {
+                transfer_id: self.transfer_id.to_string(),
+                direction: self.direction.to_string(),
+                source: source.to_string(),
+                dest: dest.to_string(),
+                name,
+                is_dir,
+                existing_is_dir,
+            },
+        );
+
+        let result = loop {
+            if let Err(e) = self.check_cancel() {
+                break Err(e);
+            }
+            match tokio::time::timeout(Duration::from_millis(100), &mut rx).await {
+                Ok(Ok(reply)) => {
+                    if reply.apply_all && reply.choice != ConflictChoice::Cancel {
+                        self.conflict_policy = Some(reply.choice);
+                    }
+                    break Ok(reply.choice);
+                }
+                // 回信端被丢弃（传输结束/取消）：按取消处理
+                Ok(Err(_)) => break Err(Stop::Cancelled),
+                Err(_) => continue,
+            }
+        };
+
+        if let Ok(mut pending) = self.transfers.pending.lock() {
+            pending.remove(self.transfer_id);
+        }
+        result
     }
 
     /// 分块复制并节流上报进度；取消时立即返回 Cancelled。
@@ -291,19 +405,210 @@ impl<'a> TransferCtx<'a> {
     }
 }
 
-fn register_transfer(
-    transfers: &State<'_, Transfers>,
-    id: &str,
-) -> Result<Arc<AtomicBool>, String> {
-    let mut map = transfers.0.lock().map_err(|e| e.to_string())?;
+fn register_transfer(transfers: &Transfers, id: &str) -> Result<Arc<AtomicBool>, String> {
+    let mut map = transfers.flags.lock().map_err(|e| e.to_string())?;
     let flag = Arc::new(AtomicBool::new(false));
     map.insert(id.to_string(), flag.clone());
     Ok(flag)
 }
 
-fn finish_transfer(transfers: &State<'_, Transfers>, id: &str) {
-    if let Ok(mut map) = transfers.0.lock() {
+fn finish_transfer(transfers: &Transfers, id: &str) {
+    if let Ok(mut map) = transfers.flags.lock() {
         map.remove(id);
+    }
+    if let Ok(mut pending) = transfers.pending.lock() {
+        pending.remove(id);
+    }
+}
+
+/// 取路径最后一段作为显示名称。
+fn display_name(path: &str) -> String {
+    path.rsplit(|c| c == '/' || c == '\\')
+        .next()
+        .unwrap_or(path)
+        .to_string()
+}
+
+/// 为文件/目录名追加序号；文件把序号插在扩展名前。
+fn with_suffix(name: &str, index: u32, is_dir: bool) -> String {
+    if is_dir {
+        return format!("{name} ({index})");
+    }
+    match name.rfind('.') {
+        Some(pos) if pos > 0 => {
+            let (stem, ext) = name.split_at(pos);
+            format!("{stem} ({index}){ext}")
+        }
+        _ => format!("{name} ({index})"),
+    }
+}
+
+/// 远端路径的“保留两者”候选名称。
+fn remote_suffixed(path: &str, index: u32, is_dir: bool) -> String {
+    let name = with_suffix(&display_name(path), index, is_dir);
+    match path.rfind('/') {
+        Some(0) => format!("/{name}"),
+        Some(pos) => format!("{}/{name}", &path[..pos]),
+        None => name,
+    }
+}
+
+/// 本地路径的“保留两者”候选名称。
+fn local_suffixed(path: &Path, index: u32, is_dir: bool) -> PathBuf {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let new_name = with_suffix(&name, index, is_dir);
+    match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent.join(new_name),
+        _ => PathBuf::from(new_name),
+    }
+}
+
+/// 目标是否已存在，返回（是否目录, 是否符号链接）。
+async fn remote_existing(sftp: &SftpSession, path: &str) -> Option<(bool, bool)> {
+    sftp.symlink_metadata(path)
+        .await
+        .ok()
+        .map(|md| (md.is_dir(), md.is_symlink()))
+}
+
+/// 目标是否已存在，返回（是否目录, 是否符号链接）。
+async fn local_existing(path: &Path) -> Option<(bool, bool)> {
+    tokio::fs::symlink_metadata(path)
+        .await
+        .ok()
+        .map(|md| (md.is_dir(), md.file_type().is_symlink()))
+}
+
+async fn unique_remote_dest(sftp: &SftpSession, dest: &str, is_dir: bool) -> Result<String, Stop> {
+    for index in 1..=9999u32 {
+        let candidate = remote_suffixed(dest, index, is_dir);
+        if sftp.symlink_metadata(candidate.as_str()).await.is_err() {
+            return Ok(candidate);
+        }
+    }
+    Err(Stop::Error("无法生成不重名的目标名称".to_string()))
+}
+
+async fn unique_local_dest(dest: &Path, is_dir: bool) -> Result<PathBuf, Stop> {
+    for index in 1..=9999u32 {
+        let candidate = local_suffixed(dest, index, is_dir);
+        if tokio::fs::symlink_metadata(&candidate).await.is_err() {
+            return Ok(candidate);
+        }
+    }
+    Err(Stop::Error("无法生成不重名的目标名称".to_string()))
+}
+
+/// 递归删除远端文件或目录（符号链接只删除链接本身）。
+async fn remove_remote_recursive(sftp: &SftpSession, path: &str) -> Result<(), Stop> {
+    let md = sftp
+        .symlink_metadata(path)
+        .await
+        .map_err(|e| Stop::Error(format!("读取远端信息失败: {e}")))?;
+    if !md.is_dir() {
+        return sftp
+            .remove_file(path)
+            .await
+            .map_err(|e| Stop::Error(format!("删除远端文件失败: {e}")));
+    }
+
+    let mut stack = vec![(path.to_string(), false)];
+    while let Some((current, visited)) = stack.pop() {
+        if visited {
+            sftp.remove_dir(current.as_str())
+                .await
+                .map_err(|e| Stop::Error(format!("删除远端目录失败: {e}")))?;
+            continue;
+        }
+        stack.push((current.clone(), true));
+        let entries = sftp
+            .read_dir(current.as_str())
+            .await
+            .map_err(|e| Stop::Error(format!("读取远端目录失败: {e}")))?;
+        for entry in entries {
+            let child = join_remote(&current, &entry.file_name());
+            match sftp.symlink_metadata(child.as_str()).await {
+                Ok(md) if md.is_dir() => stack.push((child, false)),
+                Ok(_) => {
+                    sftp.remove_file(child.as_str())
+                        .await
+                        .map_err(|e| Stop::Error(format!("删除远端文件失败: {e}")))?;
+                }
+                Err(e) => return Err(Stop::Error(format!("读取远端信息失败: {e}"))),
+            }
+        }
+    }
+    Ok(())
+}
+
+/// 递归删除本地文件或目录（符号链接只删除链接本身）。
+async fn remove_local_recursive(path: &Path) -> Result<(), Stop> {
+    let md = tokio::fs::symlink_metadata(path)
+        .await
+        .map_err(|e| Stop::Error(format!("读取本地信息失败: {e}")))?;
+    if md.is_dir() {
+        tokio::fs::remove_dir_all(path)
+            .await
+            .map_err(|e| Stop::Error(format!("删除本地目录失败: {e}")))
+    } else {
+        tokio::fs::remove_file(path)
+            .await
+            .map_err(|e| Stop::Error(format!("删除本地文件失败: {e}")))
+    }
+}
+
+/// 冲突处理结果。
+enum ConflictAction {
+    /// 使用（可能已重命名的）目标路径继续传输
+    Proceed(String),
+    /// 跳过当前条目
+    Skip,
+}
+
+/// 目标已存在时询问用户并按选择处理；不存在则直接放行。
+async fn resolve_conflict(
+    ctx: &mut TransferCtx<'_>,
+    sftp: &SftpSession,
+    source: &str,
+    dest: &str,
+    is_dir: bool,
+    existing: Option<(bool, bool)>,
+) -> Result<ConflictAction, Stop> {
+    let Some((existing_is_dir, existing_is_symlink)) = existing else {
+        return Ok(ConflictAction::Proceed(dest.to_string()));
+    };
+    let choice = ctx
+        .ask_conflict(source, dest, is_dir, existing_is_dir)
+        .await?;
+    match choice {
+        ConflictChoice::Cancel => Err(Stop::Cancelled),
+        ConflictChoice::Skip => Ok(ConflictAction::Skip),
+        ConflictChoice::KeepBoth => {
+            let unique = if ctx.direction == "upload" {
+                unique_remote_dest(sftp, dest, is_dir).await?
+            } else {
+                unique_local_dest(Path::new(dest), is_dir)
+                    .await?
+                    .to_string_lossy()
+                    .into_owned()
+            };
+            Ok(ConflictAction::Proceed(unique))
+        }
+        ConflictChoice::Overwrite => {
+            // 普通文件覆盖文件无需删除（写入时截断）；目录/符号链接先删除目标
+            let must_remove = existing_is_dir || existing_is_symlink || is_dir;
+            if ctx.direction == "upload" {
+                if must_remove {
+                    remove_remote_recursive(sftp, dest).await?;
+                }
+            } else if must_remove {
+                remove_local_recursive(Path::new(dest)).await?;
+            }
+            Ok(ConflictAction::Proceed(dest.to_string()))
+        }
     }
 }
 
@@ -448,7 +753,7 @@ async fn download_file(
     Ok(())
 }
 
-/// 逐个处理上传条目（目录用栈迭代；目录的 dest 为要填充的目标目录）。
+/// 逐个处理上传条目（目录用栈迭代；目录的 dest 为最终目标目录）。
 async fn upload_items(
     sftp: &SftpSession,
     items: &[TransferItem],
@@ -456,12 +761,21 @@ async fn upload_items(
 ) -> Result<(), Stop> {
     for item in items {
         ctx.check_cancel()?;
+        let existing = remote_existing(sftp, &item.dest).await;
+        let dest =
+            match resolve_conflict(ctx, sftp, &item.source, &item.dest, item.is_dir, existing)
+                .await?
+            {
+                ConflictAction::Skip => continue,
+                ConflictAction::Proceed(dest) => dest,
+            };
         let local = Path::new(&item.source);
         if !item.is_dir {
-            upload_file(sftp, local, &item.dest, ctx).await?;
+            upload_file(sftp, local, &dest, ctx).await?;
             continue;
         }
-        let mut dirs = vec![(local.to_path_buf(), item.dest.clone())];
+        // 目录已按“整体替换/重命名”处理，内部不会再遇到既有目标
+        let mut dirs = vec![(local.to_path_buf(), dest)];
         while let Some((dir, remote)) = dirs.pop() {
             ensure_remote_dir(sftp, &remote).await?;
             ctx.check_cancel()?;
@@ -489,7 +803,7 @@ async fn upload_items(
     Ok(())
 }
 
-/// 逐个处理下载条目（目录用栈迭代；目录的 dest 为要填充的目标目录）。
+/// 逐个处理下载条目（目录用栈迭代；目录的 dest 为最终目标目录）。
 async fn download_items(
     sftp: &SftpSession,
     items: &[TransferItem],
@@ -497,11 +811,20 @@ async fn download_items(
 ) -> Result<(), Stop> {
     for item in items {
         ctx.check_cancel()?;
+        let existing = local_existing(Path::new(&item.dest)).await;
+        let dest =
+            match resolve_conflict(ctx, sftp, &item.source, &item.dest, item.is_dir, existing)
+                .await?
+            {
+                ConflictAction::Skip => continue,
+                ConflictAction::Proceed(dest) => dest,
+            };
         if !item.is_dir {
-            download_file(sftp, &item.source, Path::new(&item.dest), ctx).await?;
+            download_file(sftp, &item.source, Path::new(&dest), ctx).await?;
             continue;
         }
-        let mut dirs = vec![(item.source.clone(), PathBuf::from(&item.dest))];
+        // 目录已按“整体替换/重命名”处理，内部不会再遇到既有目标
+        let mut dirs = vec![(item.source.clone(), PathBuf::from(dest))];
         while let Some((remote, local)) = dirs.pop() {
             tokio::fs::create_dir_all(&local)
                 .await
@@ -539,9 +862,10 @@ pub async fn sftp_upload_items(
     transfer_id: String,
     conn_id: String,
     items: Vec<TransferItem>,
+    conflict_policy: Option<ConflictChoice>,
 ) -> Result<TransferOutcome, String> {
     let sftp = get_sftp(&state, &conn_id)?;
-    let cancel = register_transfer(&transfers, &transfer_id)?;
+    let cancel = register_transfer(transfers.inner(), &transfer_id)?;
     let sources: Vec<String> = items.iter().map(|i| i.source.clone()).collect();
     let scan_flag = cancel.clone();
     let total = tokio::task::spawn_blocking(move || {
@@ -552,12 +876,20 @@ pub async fn sftp_upload_items(
     })
     .await
     .unwrap_or(0);
-    let mut ctx = TransferCtx::new(&app, &transfer_id, total, cancel);
+    let mut ctx = TransferCtx::new(
+        &app,
+        transfers.inner(),
+        &transfer_id,
+        "upload",
+        total,
+        cancel,
+        conflict_policy,
+    );
     let result = upload_items(&sftp, &items, &mut ctx).await;
     if result.is_ok() {
         ctx.emit();
     }
-    finish_transfer(&transfers, &transfer_id);
+    finish_transfer(transfers.inner(), &transfer_id);
     match result {
         Ok(()) => Ok(TransferOutcome::Done),
         Err(Stop::Cancelled) => Ok(TransferOutcome::Cancelled),
@@ -574,16 +906,25 @@ pub async fn sftp_download_items(
     transfer_id: String,
     conn_id: String,
     items: Vec<TransferItem>,
+    conflict_policy: Option<ConflictChoice>,
 ) -> Result<TransferOutcome, String> {
     let sftp = get_sftp(&state, &conn_id)?;
-    let cancel = register_transfer(&transfers, &transfer_id)?;
+    let cancel = register_transfer(transfers.inner(), &transfer_id)?;
     let total = remote_total_size(&sftp, &items, &cancel).await;
-    let mut ctx = TransferCtx::new(&app, &transfer_id, total, cancel);
+    let mut ctx = TransferCtx::new(
+        &app,
+        transfers.inner(),
+        &transfer_id,
+        "download",
+        total,
+        cancel,
+        conflict_policy,
+    );
     let result = download_items(&sftp, &items, &mut ctx).await;
     if result.is_ok() {
         ctx.emit();
     }
-    finish_transfer(&transfers, &transfer_id);
+    finish_transfer(transfers.inner(), &transfer_id);
     match result {
         Ok(()) => Ok(TransferOutcome::Done),
         Err(Stop::Cancelled) => Ok(TransferOutcome::Cancelled),
@@ -597,9 +938,71 @@ pub fn sftp_cancel_transfer(
     transfers: State<'_, Transfers>,
     transfer_id: String,
 ) -> Result<(), String> {
-    let map = transfers.0.lock().map_err(|e| e.to_string())?;
-    if let Some(flag) = map.get(&transfer_id) {
-        flag.store(true, Ordering::Relaxed);
+    let registry = transfers.inner();
+    if let Ok(map) = registry.flags.lock() {
+        if let Some(flag) = map.get(&transfer_id) {
+            flag.store(true, Ordering::Relaxed);
+        }
+    }
+    // 若正在等待冲突决策，立即唤醒并中止
+    if let Ok(mut pending) = registry.pending.lock() {
+        if let Some(tx) = pending.remove(&transfer_id) {
+            let _ = tx.send(ConflictReply {
+                choice: ConflictChoice::Cancel,
+                apply_all: false,
+            });
+        }
     }
     Ok(())
+}
+
+/// 前端对同名冲突弹窗的回复（选择 + 是否应用于后续冲突）。
+#[tauri::command]
+pub fn sftp_resolve_conflict(
+    transfers: State<'_, Transfers>,
+    transfer_id: String,
+    choice: ConflictChoice,
+    apply_all: bool,
+) -> Result<(), String> {
+    let sender = transfers
+        .inner()
+        .pending
+        .lock()
+        .map_err(|e| e.to_string())?
+        .remove(&transfer_id);
+    if let Some(tx) = sender {
+        let _ = tx.send(ConflictReply { choice, apply_all });
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn suffix_file_names() {
+        assert_eq!(with_suffix("a.txt", 1, false), "a (1).txt");
+        assert_eq!(
+            with_suffix("archive.tar.gz", 2, false),
+            "archive.tar (2).gz"
+        );
+        assert_eq!(with_suffix(".bashrc", 1, false), ".bashrc (1)");
+        assert_eq!(with_suffix("README", 3, false), "README (3)");
+        assert_eq!(with_suffix("folder.name", 1, true), "folder.name (1)");
+    }
+
+    #[test]
+    fn remote_suffix_keeps_parent() {
+        assert_eq!(remote_suffixed("/a/b/c.txt", 1, false), "/a/b/c (1).txt");
+        assert_eq!(remote_suffixed("/c.txt", 1, false), "/c (1).txt");
+        assert_eq!(remote_suffixed("c.txt", 1, false), "c (1).txt");
+        assert_eq!(remote_suffixed("/a/dir", 2, true), "/a/dir (2)");
+    }
+
+    #[test]
+    fn display_name_handles_both_separators() {
+        assert_eq!(display_name("/a/b/c.txt"), "c.txt");
+        assert_eq!(display_name("C:\\a\\b"), "b");
+    }
 }

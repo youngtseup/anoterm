@@ -22,7 +22,7 @@ use local_fs::{local_home, local_list, local_mkdir, local_remove, local_rename};
 use ssh::connect::{ssh_confirm_host_key, ssh_connect, ssh_test_connection};
 use ssh::sftp::{
     sftp_cancel_transfer, sftp_canonicalize, sftp_download_items, sftp_list, sftp_mkdir,
-    sftp_remove, sftp_rename, sftp_upload_items, Transfers,
+    sftp_remove, sftp_rename, sftp_resolve_conflict, sftp_upload_items, Transfers,
 };
 use ssh::shell::{ssh_disconnect, ssh_resize, ssh_send};
 use ssh::{HostKeyState, SshManager};
@@ -107,6 +107,7 @@ pub fn run() {
             sftp_upload_items,
             sftp_download_items,
             sftp_cancel_transfer,
+            sftp_resolve_conflict,
             // 本地文件系统命令（双栏模式）
             local_home,
             local_list,

@@ -8,6 +8,7 @@
       :cancelling="transferCancelling"
       @cancel="cancelTransfer"
     />
+    <TransferConflictDialog :conflict="transferConflict" @resolve="resolveTransferConflict" />
     <div class="flex min-h-0 flex-1">
       <FilePane
         v-show="layout === 'dual'"
@@ -48,6 +49,7 @@ import { useSftpLayout } from "../composables/useSftpLayout";
 import { useSftpTransfer } from "../composables/useSftpTransfer";
 import FilePane from "./FilePane.vue";
 import TransferBar from "./TransferBar.vue";
+import TransferConflictDialog from "./TransferConflictDialog.vue";
 
 const props = defineProps<{ tabId: string; ready: boolean }>();
 
@@ -56,8 +58,10 @@ const {
   state: transferState,
   cancelling: transferCancelling,
   running: transferRunning,
+  conflict: transferConflict,
   start: startTransfer,
   cancel: cancelTransfer,
+  resolveConflict: resolveTransferConflict,
 } = useSftpTransfer();
 const localPane = useTemplateRef<InstanceType<typeof FilePane>>("localPane");
 const remotePane = useTemplateRef<InstanceType<typeof FilePane>>("remotePane");

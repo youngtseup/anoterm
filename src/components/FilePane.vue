@@ -197,7 +197,7 @@
       </DropdownMenuTrigger>
       <DropdownMenuContent side="right" align="start" :side-offset="0" class="min-w-36">
         <DropdownMenuItem v-if="menuEntry?.isDir" @click="doCtx('enter')"
-          >进入文件夹</DropdownMenuItem
+          >打开</DropdownMenuItem
         >
         <DropdownMenuItem v-if="layout === 'dual'" @click="doCtx('transfer')">
           {{ transferMenuLabel }}
@@ -242,6 +242,9 @@
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <!-- 同名冲突处理 -->
+    <TransferConflictDialog :conflict="transferConflict" @resolve="resolveTransferConflict" />
   </div>
 </template>
 
@@ -310,6 +313,7 @@ import {
 import { Input } from "./ui/input";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import TransferBar from "./TransferBar.vue";
+import TransferConflictDialog from "./TransferConflictDialog.vue";
 
 const props = defineProps<{
   kind: "local" | "remote";
@@ -336,8 +340,10 @@ const loading = ref(false);
 const {
   state: transferState,
   cancelling: transferCancelling,
+  conflict: transferConflict,
   start: startTransfer,
   cancel: cancelTransfer,
+  resolveConflict: resolveTransferConflict,
 } = useSftpTransfer();
 /** 地址栏输入值 */
 const pathInput = ref("");
@@ -550,7 +556,7 @@ async function doDelete() {
 }
 
 // ---------- 单栏模式：系统对话框下载 / 上传 ----------
-/** 下载：文件选保存位置；文件夹选目录后递归下载（带进度/取消） */
+/** 下载：文件选保存位置；文件夹选目录后在其下创建同名目录并递归下载（带进度/取消） */
 async function downloadViaDialog(entry: SftpEntry) {
   if (props.kind !== "remote" || transferState.value) return;
   try {
@@ -558,15 +564,20 @@ async function downloadViaDialog(entry: SftpEntry) {
     if (entry.isDir) {
       const dir = await open({ directory: true, title: "选择保存位置" });
       if (!dir) return;
-      dest = dir;
+      // 与双栏一致：在所选目录下创建同名子文件夹
+      dest = joinLocal(dir, entry.name);
     } else {
       const target = await save({ defaultPath: entry.name });
       if (!target) return;
       dest = target;
     }
-    const outcome = await startTransfer(props.tabId!, "download", [
-      { source: entry.path, dest, isDir: entry.isDir },
-    ]);
+    const outcome = await startTransfer(
+      props.tabId!,
+      "download",
+      [{ source: entry.path, dest, isDir: entry.isDir }],
+      // 文件保存路径由系统保存框确认，覆盖时不再二次弹窗
+      entry.isDir ? undefined : { conflictPolicy: "overwrite" },
+    );
     if (outcome === "done") {
       toast.success(entry.isDir ? "文件夹下载完成" : "下载完成");
     } else {
@@ -611,9 +622,7 @@ const menuPos = ref({ x: 0, y: 0 });
 const menuEntry = ref<SftpEntry | null>(null);
 
 const transferMenuLabel = computed(() => {
-  const entry = menuEntry.value;
-  if (props.kind === "local") return entry?.isDir ? "上传文件夹" : "上传到右侧";
-  return entry?.isDir ? "下载文件夹" : "下载到左侧";
+  return props.kind === "local" ? "上传到右侧" : "下载到左侧";
 });
 
 function onRowContextmenu(ev: MouseEvent, row: SftpEntry, index: number) {
