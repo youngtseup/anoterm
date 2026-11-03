@@ -2,9 +2,11 @@
   <div class="connection-view">
     <TerminalView
       v-if="hasSsh"
+      ref="terminalRef"
       v-show="activeSub === 'ssh'"
       :tab-id="tabId"
       :active="active && activeSub === 'ssh'"
+      :ready="ready"
       @close="emit('close', $event)"
     />
     <SftpView v-if="hasSftp" v-show="activeSub === 'sftp'" :tab-id="tabId" :ready="ready" />
@@ -45,11 +47,14 @@ const hasSftp = computed(
 );
 
 let disposed = false;
-/** 会话建立完成（供 SftpView 开始加载） */
+/** 会话建立完成（供 SftpView 开始加载、终端补发尺寸） */
 const ready = ref(false);
+const terminalRef = ref<InstanceType<typeof TerminalView> | null>(null);
 
 /** 挂载时建立会话（按连接类型打开 shell / sftp 通道） */
 onMounted(async () => {
+  // 用终端实际尺寸初始化远端 PTY，避免固定 80x24 导致提前换行
+  const size = terminalRef.value?.getSize();
   try {
     await invoke("ssh_connect", {
       connId: props.tabId,
@@ -64,6 +69,7 @@ onMounted(async () => {
       name: props.connection.name,
       remark: props.connection.remark,
       sessionType: props.connection.type,
+      ...(size ? { cols: size.cols, rows: size.rows } : {}),
     });
     ready.value = true;
     emit("connected", props.tabId);

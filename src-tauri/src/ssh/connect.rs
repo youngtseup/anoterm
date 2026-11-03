@@ -357,6 +357,8 @@ pub async fn ssh_connect(
     name: String,
     remark: String,
     session_type: String,
+    cols: Option<u32>,
+    rows: Option<u32>,
 ) -> Result<(), String> {
     // 若该 tab 已存在会话（重连），先中止旧的数据泵任务
     {
@@ -412,8 +414,11 @@ pub async fn ssh_connect(
             .map_err(|e| e.to_string())?;
         let (read, write) = channel.split();
 
+        // 前端传入实际终端尺寸，未提供时退回 80x24
+        let cols = cols.unwrap_or(80).clamp(2, 500);
+        let rows = rows.unwrap_or(24).clamp(1, 500);
         write
-            .request_pty(false, "xterm-256color", 80, 24, 0, 0, &[])
+            .request_pty(false, "xterm-256color", cols, rows, 0, 0, &[])
             .await
             .map_err(|e| format!("请求 PTY 失败: {e}"))?;
         write

@@ -25,7 +25,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { toast } from "vue-sonner";
 import { TERMINAL_MIN_CONTRAST, buildTerminalTheme, useTheme } from "../composables/useTheme";
 
-const props = defineProps<{ tabId: string; active?: boolean }>();
+const props = defineProps<{ tabId: string; active?: boolean; ready?: boolean }>();
 const emit = defineEmits<{ close: [tabId: string] }>();
 
 const containerRef = ref<HTMLElement | null>(null);
@@ -50,6 +50,8 @@ let unlistenOutput: UnlistenFn | null = null;
 let unlistenClosed: UnlistenFn | null = null;
 let disposed = false;
 let ro: ResizeObserver | null = null;
+/** 后端会话是否已建立（未建立时的 resize 会被后端拒绝，需在 ready 后补发） */
+let sessionReady = false;
 
 const hasSelection = ref(false);
 const hasClipboardText = ref(false);
@@ -73,12 +75,15 @@ function sendData(data: string) {
 
 /** 窗口尺寸变化 → 后端（远端 PTY 同步） */
 function sendResize(cols: number, rows: number) {
-  if (disposed) return;
+  if (disposed || !sessionReady) return;
   invoke("ssh_resize", { connId: props.tabId, cols, rows }).catch(() => {});
 }
 
 /** 自适应尺寸并通知远端 */
 function fitAndResize() {
+  // 隐藏（display:none）时尺寸为 0，FitAddon 会兜底成 2x1，必须跳过
+  const el = containerRef.value;
+  if (!el || el.clientWidth === 0 || el.clientHeight === 0) return;
   try {
     fit.fit();
     sendResize(term.cols, term.rows);
@@ -86,6 +91,14 @@ function fitAndResize() {
     /* ignore */
   }
 }
+
+/** 当前终端的实际行列数（供建立会话时初始化远端 PTY） */
+function getSize(): { cols: number; rows: number } {
+  fitAndResize();
+  return { cols: term.cols, rows: term.rows };
+}
+
+defineExpose({ getSize, fitAndResize });
 
 /** 复制选中文本到剪贴板 */
 function copySelection() {
@@ -190,10 +203,10 @@ function handleKey(event: KeyboardEvent): boolean {
 onMounted(async () => {
   term.loadAddon(fit);
   term.open(containerRef.value!);
+  term.onResize(({ cols, rows }) => sendResize(cols, rows));
   fit.fit();
 
   term.onData((data) => sendData(data));
-  term.onResize(({ cols, rows }) => sendResize(cols, rows));
   term.attachCustomKeyEventHandler(handleKey);
   selectionDisposable = term.onSelectionChange(syncSelectionState);
   window.addEventListener("focus", handleWindowFocus);
@@ -244,6 +257,16 @@ watch(
     } else {
       stopClipboardWatch();
     }
+  },
+);
+
+// 会话建立后补发一次尺寸：首次 fit 发生在 ssh_connect 之前，会被后端拒绝
+watch(
+  () => props.ready,
+  (ready) => {
+    if (!ready) return;
+    sessionReady = true;
+    requestAnimationFrame(() => fitAndResize());
   },
 );
 
