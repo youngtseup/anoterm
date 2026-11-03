@@ -88,16 +88,63 @@
 
     <div class="relative min-h-0 flex-1">
       <div class="h-full overflow-auto">
-        <table class="w-full caption-bottom text-sm">
+        <table class="w-full table-fixed caption-bottom text-sm">
           <TableHeader class="sticky top-0 z-10 bg-muted/95 backdrop-blur">
             <TableRow class="hover:bg-transparent">
-              <TableHead :class="layout === 'single' ? 'min-w-[260px]' : 'min-w-[140px]'"
-                >名称</TableHead
+              <TableHead
+                :class="layout === 'single' ? 'min-w-[260px]' : 'min-w-[140px]'"
+                :aria-sort="ariaSort('name')"
               >
-              <TableHead :class="layout === 'single' ? 'w-[100px]' : 'w-[80px]'">大小</TableHead>
-              <TableHead :class="layout === 'single' ? 'w-[150px]' : 'w-[130px]'"
-                >修改时间</TableHead
+                <button
+                  type="button"
+                  class="flex cursor-pointer items-center gap-1 transition-colors select-none hover:text-foreground"
+                  :title="
+                    sortKey === 'name'
+                      ? `按名称排序：${sortDir === 'asc' ? '升序' : '降序'}，点击切换`
+                      : '按名称排序'
+                  "
+                  @click="toggleSort('name')"
+                >
+                  名称
+                  <SortIndicator :active="sortKey === 'name' ? sortDir : null" />
+                </button>
+              </TableHead>
+              <TableHead
+                :class="layout === 'single' ? 'w-[100px]' : 'w-[80px]'"
+                :aria-sort="ariaSort('size')"
               >
+                <button
+                  type="button"
+                  class="flex cursor-pointer items-center gap-1 transition-colors select-none hover:text-foreground"
+                  :title="
+                    sortKey === 'size'
+                      ? `按大小排序：${sortDir === 'asc' ? '升序' : '降序'}，点击切换`
+                      : '按大小排序'
+                  "
+                  @click="toggleSort('size')"
+                >
+                  大小
+                  <SortIndicator :active="sortKey === 'size' ? sortDir : null" />
+                </button>
+              </TableHead>
+              <TableHead
+                :class="layout === 'single' ? 'w-[150px]' : 'w-[130px]'"
+                :aria-sort="ariaSort('mtime')"
+              >
+                <button
+                  type="button"
+                  class="flex cursor-pointer items-center gap-1 transition-colors select-none hover:text-foreground"
+                  :title="
+                    sortKey === 'mtime'
+                      ? `按修改时间排序：${sortDir === 'asc' ? '升序' : '降序'}，点击切换`
+                      : '按修改时间排序'
+                  "
+                  @click="toggleSort('mtime')"
+                >
+                  修改时间
+                  <SortIndicator :active="sortKey === 'mtime' ? sortDir : null" />
+                </button>
+              </TableHead>
               <TableHead
                 v-if="kind === 'remote' && layout === 'single'"
                 class="w-[180px] text-right"
@@ -125,7 +172,7 @@
               <TableCell v-if="kind === 'remote' && layout === 'single'"></TableCell>
             </TableRow>
             <TableRow
-              v-for="(row, index) in entries"
+              v-for="(row, index) in sortedEntries"
               :key="row.path"
               class="cursor-default"
               :class="
@@ -196,9 +243,7 @@
         <div class="fixed size-0" :style="{ left: `${menuPos.x}px`, top: `${menuPos.y}px` }" />
       </DropdownMenuTrigger>
       <DropdownMenuContent side="right" align="start" :side-offset="0" class="min-w-36">
-        <DropdownMenuItem v-if="menuEntry?.isDir" @click="doCtx('enter')"
-          >打开</DropdownMenuItem
-        >
+        <DropdownMenuItem v-if="menuEntry?.isDir" @click="doCtx('enter')">打开</DropdownMenuItem>
         <DropdownMenuItem v-if="layout === 'dual'" @click="doCtx('transfer')">
           {{ transferMenuLabel }}
         </DropdownMenuItem>
@@ -255,6 +300,7 @@
  * - 双栏模式：行多选（Ctrl/Shift），工具栏「上传/下载」或双击文件把选中项交给宿主传输
  * - 单栏模式（仅远端）：保留系统对话框上传/下载与行内操作链接
  * - 通用操作：地址栏跳转、新建文件夹、重命名、删除、右键菜单
+ * - 列表排序：名称/大小/修改时间，文件夹置顶，偏好按本地/远端分别持久化
  */
 import { computed, onMounted, ref, watch } from "vue";
 import { toast } from "vue-sonner";
@@ -273,6 +319,7 @@ import {
 } from "@lucide/vue";
 import type { SftpEntry } from "../types";
 import type { SftpLayout } from "../composables/useSftpLayout";
+import { useSftpSort, type SortKey } from "../composables/useSftpSort";
 import { useSftpTransfer } from "../composables/useSftpTransfer";
 import {
   localHome,
@@ -311,6 +358,7 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import { Input } from "./ui/input";
+import SortIndicator from "./SortIndicator.vue";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import TransferBar from "./TransferBar.vue";
 import TransferConflictDialog from "./TransferConflictDialog.vue";
@@ -352,8 +400,32 @@ const selected = ref<Set<string>>(new Set());
 /** Shift 连选的锚点下标 */
 const lastIndex = ref<number | null>(null);
 
+const { sortKey, sortDir, toggleSort } = useSftpSort(props.kind);
+const nameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+/** 文件夹始终置顶，再按当前字段排序；字段相同时按名称升序兜底 */
+const sortedEntries = computed(() => {
+  const direction = sortDir.value === "asc" ? 1 : -1;
+  return [...entries.value].sort((a, b) => {
+    if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+    let result = 0;
+    if (sortKey.value === "name") result = nameCollator.compare(a.name, b.name);
+    else if (sortKey.value === "size") result = (a.size ?? 0) - (b.size ?? 0);
+    else result = (a.mtime ?? 0) - (b.mtime ?? 0);
+    if (result === 0) return nameCollator.compare(a.name, b.name);
+    return result * direction;
+  });
+});
+
+function ariaSort(key: SortKey): "ascending" | "descending" | "none" {
+  if (sortKey.value !== key) return "none";
+  return sortDir.value === "asc" ? "ascending" : "descending";
+}
+
 const isAtRoot = computed(() => isRootPath(props.kind, cwd.value));
-const selectedEntries = computed(() => entries.value.filter((e) => selected.value.has(e.path)));
+const selectedEntries = computed(() =>
+  sortedEntries.value.filter((e) => selected.value.has(e.path)),
+);
 const hasSelection = computed(() => selectedEntries.value.length > 0);
 const transferDisabled = computed(() => !hasSelection.value || !!props.busy || !props.ready);
 
@@ -428,7 +500,7 @@ function onRowClick(ev: MouseEvent, row: SftpEntry, index: number) {
   const next = new Set(selected.value);
   if (ev.shiftKey && lastIndex.value !== null) {
     const [from, to] = [lastIndex.value, index].sort((a, b) => a - b);
-    for (let i = from; i <= to; i++) next.add(entries.value[i].path);
+    for (let i = from; i <= to; i++) next.add(sortedEntries.value[i].path);
   } else if (ev.ctrlKey || ev.metaKey) {
     if (next.has(row.path)) next.delete(row.path);
     else next.add(row.path);
@@ -689,6 +761,11 @@ watch(
     if (value === "single") clearSelection();
   },
 );
+
+// 排序变化后重置 Shift 连选锚点
+watch([sortKey, sortDir], () => {
+  lastIndex.value = null;
+});
 
 // 远端会话就绪后加载根目录
 watch(
