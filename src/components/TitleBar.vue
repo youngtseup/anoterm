@@ -59,6 +59,14 @@
             </TooltipTrigger>
             <TooltipContent side="bottom">{{ isDark ? "切换亮色" : "切换暗色" }}</TooltipContent>
           </Tooltip>
+          <Tooltip :ignore-non-keyboard-focus="true">
+            <TooltipTrigger as-child>
+              <Button variant="ghost" size="icon" class="size-8" @click="emit('openSettings')">
+                <Settings class="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">设置</TooltipContent>
+          </Tooltip>
         </div>
 
         <div v-if="!isMac" class="flex items-center self-stretch">
@@ -91,7 +99,7 @@
  * - 空白区域按下可拖动窗口（button 等选择器内的控件除外），双击最大化
  */
 import { onMounted, ref } from "vue";
-import { Copy, Loader2, Maximize, Minus, Moon, RefreshCw, Sun, X } from "@lucide/vue";
+import { Copy, Loader2, Maximize, Minus, Moon, RefreshCw, Settings, Sun, X } from "@lucide/vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "./ui/button";
@@ -104,6 +112,7 @@ const emit = defineEmits<{
   home: [];
   toggleTheme: [];
   checkUpdate: [];
+  openSettings: [];
 }>();
 
 /** macOS 使用系统原生窗口控制按钮（交通灯在左侧） */

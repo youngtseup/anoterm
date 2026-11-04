@@ -7,16 +7,50 @@
 import { ref, watch, type Ref } from "vue";
 import type { ITheme } from "@xterm/xterm";
 
-const isDark: Ref<boolean> = ref(false);
+const THEME_STORAGE_KEY = "anoterm:theme";
 
-// 主题切换：shadcn 变量作用于 html 的 .dark 类
-watch(isDark, (v) => document.documentElement.classList.toggle("dark", v), { immediate: true });
+/** 读取持久化的主题偏好；存储不可用或值非法时返回 null */
+function readStoredTheme(): boolean | null {
+  try {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    if (stored === "dark") return true;
+    if (stored === "light") return false;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+/** 将当前主题写入 localStorage */
+function persistTheme(dark: boolean) {
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, dark ? "dark" : "light");
+  } catch {
+    /* ignore */
+  }
+}
+
+const isDark: Ref<boolean> = ref(readStoredTheme() ?? false);
+
+// 主题切换：shadcn 变量作用于 html 的 .dark 类，同时持久化偏好
+watch(
+  isDark,
+  (v) => {
+    document.documentElement.classList.toggle("dark", v);
+    persistTheme(v);
+  },
+  { immediate: true },
+);
 
 export function useTheme() {
   function toggleTheme() {
     isDark.value = !isDark.value;
   }
-  return { isDark, toggleTheme };
+  /** 显式保存当前主题（设置弹窗「应用」使用） */
+  function saveTheme() {
+    persistTheme(isDark.value);
+  }
+  return { isDark, toggleTheme, saveTheme };
 }
 
 /**

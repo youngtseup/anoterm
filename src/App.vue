@@ -6,6 +6,7 @@
       @home="goHome"
       @toggle-theme="toggleTheme"
       @check-update="handleCheckUpdate"
+      @open-settings="settingsOpen = true"
     />
 
     <div class="relative flex flex-1 overflow-hidden">
@@ -92,6 +93,7 @@
       :preset-group-id="connDialog.presetGroupId"
       @submit="handleConnSubmit"
     />
+    <SettingsDialog v-model="settingsOpen" />
 
     <!-- 通用确认对话框 -->
     <AlertDialog v-model:open="confirmOpen">
@@ -237,6 +239,7 @@ import ConnectionView from "./components/ConnectionView.vue";
 import TabBar from "./components/TabBar.vue";
 import AddGroupDialog from "./components/AddGroupDialog.vue";
 import AddConnectionDialog from "./components/AddConnectionDialog.vue";
+import SettingsDialog from "./components/SettingsDialog.vue";
 import { Button } from "./components/ui/button";
 import {
   AlertDialog,
@@ -285,6 +288,7 @@ import { useTheme } from "./composables/useTheme";
 // ---------- 全局 UI 状态 ----------
 const { isDark, toggleTheme } = useTheme();
 const sidebarCollapsed = ref(false);
+const settingsOpen = ref(false);
 
 // ---------- 数据状态 ----------
 const groups = ref<Group[]>([]);
