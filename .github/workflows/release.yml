@@ -83,14 +83,22 @@ jobs:
           releaseBody: |
             ## 安装包（普通用户下载）
 
-            - Windows：`Anoterm_*_x64-setup.exe`
-            - macOS：`Anoterm_*_universal.dmg`
-            - Linux：`.deb` / `.AppImage`
+            - **Windows**：`Anoterm_*_x64-setup.exe`
 
-            ## 说明
+              安装包未做代码签名，可能出现 SmartScreen 提示（选择「仍要运行」）。
 
-            - `latest.json` 与应用内「检查更新」使用的更新包（macOS 的 `.app.tar.gz`）请勿手动安装
-            - 本版本安装包未做代码签名：Windows 可能出现 SmartScreen 提示（选择"仍要运行"）；macOS 首次打开需右键 → 打开
+            - **macOS**：`Anoterm_*_universal.dmg`
+
+              安装包未做代码签名，首次运行需要执行：
+
+              ```bash
+              xattr -dr com.apple.quarantine /Applications/Anoterm.app
+              ```
+
+            - **Linux**：`.deb` / `.AppImage`
+
+            ## 变更说明
+
           releaseDraft: true
           prerelease: false
           retryAttempts: 3
