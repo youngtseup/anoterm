@@ -13,6 +13,7 @@
         :groups="groups"
         :active-conn="activeConnId"
         :collapsed="sidebarCollapsed"
+        @home="goHome"
         @select="handleSelect"
         @add-group="openAddGroup"
         @rename-group="openRenameGroup"

@@ -3,7 +3,21 @@
     class="flex flex-col overflow-hidden border-border bg-muted/50 transition-[width,min-width] duration-200 ease-in-out"
     :class="collapsed ? 'w-0 min-w-0' : 'w-[260px] min-w-[260px] border-r'"
   >
-    <div class="px-4 pt-3 pb-1">
+    <div v-if="isMac" class="px-4 pt-3">
+      <button
+        type="button"
+        class="-ml-1.5 flex cursor-pointer items-center gap-2.5 rounded-md px-1.5 py-1 transition-colors hover:bg-muted/60"
+        title="返回首页"
+        @click="emit('home')"
+      >
+        <span class="flex h-7 w-7 items-center justify-center overflow-hidden">
+          <img :src="appIcon" alt="Anoterm" class="block h-6 w-6 rounded-md object-cover" />
+        </span>
+        <span class="text-sm font-semibold">Anoterm</span>
+      </button>
+    </div>
+
+    <div class="px-4 pb-1" :class="isMac ? 'pt-2' : 'pt-3'">
       <Button size="sm" class="w-full" @click="emit('add-conn')">
         <Plug class="size-4" />
         新增连接
@@ -152,6 +166,7 @@
  * - 长按左键拖动分组排序，或拖动连接在组内/跨组/顶层排序
  * - 未归属分组的连接直接显示在所有分组上方的树顶层
  * - 分组/连接右键菜单使用 DropdownMenu（受控 open + 鼠标坐标锚点）
+ * - macOS 下标题栏使用原生交通灯，品牌 Logo/名称显示在新增连接上方
  */
 import { computed, onBeforeUnmount, ref } from "vue";
 import { ChevronRight, FolderPlus, Plug } from "@lucide/vue";
@@ -170,6 +185,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
+import appIcon from "../assets/app-icon.png";
 
 const props = defineProps<{
   groups: Group[];
@@ -179,6 +195,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   select: [id: string];
+  home: [];
   "add-group": [];
   "rename-group": [id: string, name: string];
   "delete-group": [id: string, name: string];
@@ -187,6 +204,9 @@ const emit = defineEmits<{
   "delete-conn": [id: string, name: string];
   reorder: [order: TreeOrder];
 }>();
+
+/** macOS 使用系统原生窗口控制按钮（交通灯在标题栏左侧） */
+const isMac = navigator.userAgent.toLowerCase().includes("mac");
 
 // ---------- 右键菜单状态 ----------
 const menuOpen = ref(false);

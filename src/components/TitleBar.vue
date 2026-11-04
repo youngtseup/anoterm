@@ -4,7 +4,7 @@
     :class="isMac ? 'pl-20' : 'pl-4'"
     @mousedown="handleDrag"
   >
-    <div class="flex items-center gap-2.5">
+    <div v-if="!isMac" class="flex items-center gap-2.5">
       <button
         type="button"
         class="-ml-1.5 flex cursor-pointer items-center gap-2.5 rounded-md px-1.5 py-1 transition-colors hover:bg-muted/60"
@@ -87,7 +87,7 @@
  * 自定义标题栏：
  * - Windows/Linux：窗口无系统装饰，右侧绘制最小化/最大化/关闭
  * - macOS：窗口保留系统标题栏（Overlay + 隐藏标题），使用原生左侧交通灯，
- *   左侧留白避让，右侧仅保留功能按钮
+ *   左侧留白避让，品牌信息移至侧边栏顶部，右侧仅保留功能按钮
  * - 空白区域按下可拖动窗口（button 等选择器内的控件除外），双击最大化
  */
 import { onMounted, ref } from "vue";
