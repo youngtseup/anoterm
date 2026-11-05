@@ -1,10 +1,14 @@
 <template>
   <Dialog v-model:open="open">
-    <DialogContent class="gap-0 overflow-hidden p-0 sm:max-w-3xl" :show-close-button="false">
+    <DialogContent
+      class="inset-x-0 top-10 bottom-0 flex max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:max-w-none"
+      :show-close-button="false"
+      @pointer-down-outside.prevent
+    >
       <DialogTitle class="sr-only">设置</DialogTitle>
       <DialogDescription class="sr-only">应用设置与版本信息</DialogDescription>
 
-      <div class="flex h-[min(520px,80vh)] flex-col">
+      <div class="flex min-h-0 flex-1 flex-col">
         <div class="flex min-h-0 flex-1">
           <aside class="flex w-44 shrink-0 flex-col border-r border-border bg-muted/30 p-3">
             <div class="px-2 pt-1 pb-3 text-base font-semibold">设置</div>

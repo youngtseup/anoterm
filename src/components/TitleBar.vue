@@ -1,7 +1,7 @@
 <template>
   <header
-    class="z-100 flex h-10 shrink-0 items-center justify-between border-b border-border bg-background shadow-sm select-none"
-    :class="isMac ? 'pl-20' : 'pl-4'"
+    class="relative flex h-10 shrink-0 items-center justify-between border-b border-border bg-background shadow-sm select-none"
+    :class="[isMac ? 'pl-20' : 'pl-4', interactive ? 'z-100 pointer-events-auto' : '']"
     @mousedown="handleDrag"
   >
     <div v-if="!isMac" class="flex items-center gap-2.5">
@@ -106,7 +106,7 @@ import { Button } from "./ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import appIcon from "../assets/app-icon.png";
 
-defineProps<{ isDark: boolean; checkingUpdate?: boolean }>();
+defineProps<{ isDark: boolean; checkingUpdate?: boolean; interactive?: boolean }>();
 
 const emit = defineEmits<{
   home: [];

@@ -3,6 +3,7 @@
     <TitleBar
       :is-dark="isDark"
       :checking-update="checkingUpdate"
+      :interactive="settingsOpen"
       @home="goHome"
       @toggle-theme="toggleTheme"
       @check-update="handleCheckUpdate"

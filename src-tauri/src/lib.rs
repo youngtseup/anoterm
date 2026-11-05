@@ -60,6 +60,7 @@ pub fn run() {
             let mut window = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
                 .title("Anoterm")
                 .inner_size(1325.0, 805.0)
+                .min_inner_size(960.0, 600.0)
                 .center()
                 .enable_clipboard_access();
 
