@@ -71,7 +71,10 @@ pub fn run() {
                 window = window
                     .decorations(true)
                     .title_bar_style(tauri::TitleBarStyle::Overlay)
-                    .hidden_title(true);
+                    .hidden_title(true)
+                    // 交通灯默认按 28px 原生标题栏定位，在前端 40px 标题栏里会偏上；
+                    // y=20 使按钮在 40px 标题栏内垂直居中（TitleBar 高度变化时需同步调整）
+                    .traffic_light_position(tauri::LogicalPosition::new(13.0, 20.0));
             }
             #[cfg(not(target_os = "macos"))]
             {
