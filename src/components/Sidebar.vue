@@ -274,6 +274,8 @@ function onConnContextMenu(e: MouseEvent, conn: Connection) {
 // ---------- 长按拖动 ----------
 const LONG_PRESS_MS = 150;
 const MOVE_CANCEL_PX = 2;
+/** 长按进入拖动后，移动超过该距离才算真正拖动，否则仍视为点击 */
+const DRAG_MOVE_PX = 4;
 const CLICK_SUPPRESS_MS = 300;
 
 type DragSource =
@@ -296,6 +298,8 @@ const dragging = ref<DragSource | null>(null);
 const dropTarget = ref<DropTarget | null>(null);
 let pressState: PressState | null = null;
 let pressTimer: number | null = null;
+/** 长按后是否真的发生了拖动（仅按住未移动视为点击） */
+let dragMoved = false;
 let ignoreClickUntil = 0;
 let targetFrame: number | null = null;
 let pendingTargetX = 0;
@@ -336,6 +340,7 @@ function cleanupPress() {
   }
   const state = pressState;
   pressState = null;
+  dragMoved = false;
   if (state) {
     try {
       if (state.element.hasPointerCapture(state.pointerId)) {
@@ -399,6 +404,9 @@ function onPointerMove(event: PointerEvent) {
   }
   pendingTargetX = event.clientX;
   pendingTargetY = event.clientY;
+  if (Math.hypot(event.clientX - pressState.x, event.clientY - pressState.y) > DRAG_MOVE_PX) {
+    dragMoved = true;
+  }
   if (targetFrame !== null) return;
   targetFrame = window.requestAnimationFrame(() => {
     targetFrame = null;
@@ -408,7 +416,8 @@ function onPointerMove(event: PointerEvent) {
 
 function onPointerUp(event: PointerEvent) {
   const source = dragging.value;
-  if (source && event.type === "pointerup") {
+  // 只有真的拖动过才拦截后续 click；长按但未移动仍按点击处理
+  if (source && event.type === "pointerup" && dragMoved) {
     updateDropTarget(event.clientX, event.clientY);
     ignoreClickUntil = Date.now() + CLICK_SUPPRESS_MS;
     if (dropTarget.value) applyDrop(source, dropTarget.value);
