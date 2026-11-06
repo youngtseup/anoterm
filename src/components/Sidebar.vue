@@ -46,7 +46,7 @@
     <div class="sidebar-content flex-1 overflow-y-auto px-2 pb-2">
       <div v-if="ungroupedConnections.length > 0" class="mb-1">
         <div
-          class="connection-root-item relative flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 transition-colors select-none hover:bg-card"
+          class="connection-root-item group relative flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 pr-9 transition-colors select-none hover:bg-card"
           :class="[
             activeConn === conn.id ? 'bg-card shadow-sm' : '',
             connDropClass(conn.id),
@@ -64,7 +64,7 @@
               groupId: UNGROUPED_GROUP_ID,
             })
           "
-          @contextmenu.prevent="onConnContextMenu($event, conn)"
+          @contextmenu.prevent="openConnMenu($event, conn)"
         >
           <span class="size-[7px] shrink-0 rounded-full bg-muted-foreground"></span>
           <span
@@ -73,18 +73,28 @@
           >
             {{ conn.name }}
           </span>
+          <button
+            type="button"
+            class="absolute top-1/2 right-1.5 flex size-6 -translate-y-1/2 items-center justify-center rounded-md bg-card text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100"
+            title="更多操作"
+            aria-label="更多操作"
+            @pointerdown.stop
+            @click.stop="openConnMenu($event, conn)"
+          >
+            <Ellipsis class="size-4" />
+          </button>
         </div>
       </div>
 
       <div class="mb-0.5" v-for="group in realGroups" :key="group.id">
         <div
-          class="group-row relative flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 transition-colors select-none hover:bg-card"
+          class="group-row group relative flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 pr-9 transition-colors select-none hover:bg-card"
           :class="[groupDropClass(group.id), { 'drag-source': isGroupDragSource(group.id) }]"
           :data-group-id="group.id"
           title="点击展开/收起，长按拖动排序"
           @click="handleGroupClick(group)"
           @pointerdown="onPointerDown($event, { kind: 'group', groupId: group.id })"
-          @contextmenu.prevent="onGroupContextMenu($event, group)"
+          @contextmenu.prevent="openGroupMenu($event, group)"
         >
           <ChevronRight
             class="size-3.5 text-muted-foreground transition-transform duration-200"
@@ -94,6 +104,16 @@
           <span class="rounded-full bg-background px-1.5 text-[11px] text-muted-foreground">
             {{ group.connections.length }}
           </span>
+          <button
+            type="button"
+            class="absolute top-1/2 right-1.5 flex size-6 -translate-y-1/2 items-center justify-center rounded-md bg-card text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100"
+            title="更多操作"
+            aria-label="更多操作"
+            @pointerdown.stop
+            @click.stop="openGroupMenu($event, group)"
+          >
+            <Ellipsis class="size-4" />
+          </button>
         </div>
 
         <div
@@ -101,7 +121,7 @@
           :class="group.open ? 'max-h-[800px]' : 'max-h-0'"
         >
           <div
-            class="connection-item relative flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-[7px] transition-colors select-none hover:bg-card"
+            class="connection-item group relative flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-[7px] pr-9 transition-colors select-none hover:bg-card"
             :class="[
               activeConn === conn.id ? 'bg-card shadow-sm' : '',
               connDropClass(conn.id),
@@ -119,7 +139,7 @@
                 groupId: group.id,
               })
             "
-            @contextmenu.prevent="onConnContextMenu($event, conn)"
+            @contextmenu.prevent="openConnMenu($event, conn)"
           >
             <span class="size-[7px] shrink-0 rounded-full bg-muted-foreground"></span>
             <span
@@ -128,6 +148,16 @@
             >
               {{ conn.name }}
             </span>
+            <button
+              type="button"
+              class="absolute top-1/2 right-1.5 flex size-6 -translate-y-1/2 items-center justify-center rounded-md bg-card text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100"
+              title="更多操作"
+              aria-label="更多操作"
+              @pointerdown.stop
+              @click.stop="openConnMenu($event, conn)"
+            >
+              <Ellipsis class="size-4" />
+            </button>
           </div>
         </div>
       </div>
@@ -140,12 +170,19 @@
       </div>
     </div>
 
-    <!-- 右键菜单（锚定在鼠标坐标的零尺寸触发元素上） -->
-    <DropdownMenu v-model:open="menuOpen">
+    <!-- 右键菜单（锚定在鼠标坐标的零尺寸触发元素上）。
+         非模态：菜单打开时仍可右键其他行并重新定位 -->
+    <DropdownMenu v-model:open="menuOpen" :modal="false">
       <DropdownMenuTrigger as-child>
         <div class="fixed size-0" :style="{ left: `${menuPos.x}px`, top: `${menuPos.y}px` }" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="right" align="start" :side-offset="0" class="min-w-36">
+      <DropdownMenuContent
+        :key="menuVersion"
+        side="right"
+        align="start"
+        :side-offset="0"
+        class="min-w-36"
+      >
         <DropdownMenuItem
           v-for="item in menuItems"
           :key="item.label"
@@ -169,7 +206,7 @@
  * - macOS 下标题栏使用原生交通灯，品牌 Logo/名称显示在新增连接上方
  */
 import { computed, onBeforeUnmount, ref } from "vue";
-import { ChevronRight, FolderPlus, Plug } from "@lucide/vue";
+import { ChevronRight, Ellipsis, FolderPlus, Plug } from "@lucide/vue";
 import {
   UNGROUPED_GROUP_ID,
   isUngroupedGroup,
@@ -210,6 +247,8 @@ const isMac = navigator.userAgent.toLowerCase().includes("mac");
 
 // ---------- 右键菜单状态 ----------
 const menuOpen = ref(false);
+/** 每次打开菜单递增 key，强制重新计算锚点位置 */
+const menuVersion = ref(0);
 const menuPos = ref({ x: 0, y: 0 });
 const menuItems = ref<ContextMenuItem[]>([]);
 let menuRunner: ((cmd: string) => void) | null = null;
@@ -217,7 +256,13 @@ let menuRunner: ((cmd: string) => void) | null = null;
 function openMenu(e: MouseEvent, items: ContextMenuItem[], runner: (cmd: string) => void) {
   menuItems.value = items;
   menuRunner = runner;
-  menuPos.value = { x: e.clientX, y: e.clientY };
+  // 键盘触发时没有鼠标坐标，退回到触发元素的右下角
+  const rect = (e.currentTarget as HTMLElement | null)?.getBoundingClientRect();
+  menuPos.value = {
+    x: e.clientX || rect?.right || 0,
+    y: e.clientY || rect?.bottom || 0,
+  };
+  menuVersion.value++;
   menuOpen.value = true;
 }
 
@@ -241,7 +286,8 @@ function handleConnClick(conn: Connection) {
   emit("select", conn.id);
 }
 
-function onGroupContextMenu(e: MouseEvent, group: Group) {
+/** 打开分组操作菜单（右键或“更多”按钮） */
+function openGroupMenu(e: MouseEvent, group: Group) {
   openMenu(
     e,
     [
@@ -257,7 +303,8 @@ function onGroupContextMenu(e: MouseEvent, group: Group) {
   );
 }
 
-function onConnContextMenu(e: MouseEvent, conn: Connection) {
+/** 打开连接操作菜单（右键或“更多”按钮） */
+function openConnMenu(e: MouseEvent, conn: Connection) {
   openMenu(
     e,
     [
