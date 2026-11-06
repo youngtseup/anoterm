@@ -129,3 +129,14 @@ export function subTabsForType(type: string): SubKind[] {
   if (type === "ssh") return ["ssh"];
   return ["ssh", "sftp"];
 }
+
+/** 更新任务状态（用于标题栏展示） */
+export type UpdateStatus = "idle" | "downloading" | "downloaded" | "installing";
+
+/** UpdateDialog 向父组件同步的更新状态 */
+export interface UpdateStatusPayload {
+  checking: boolean;
+  status: UpdateStatus;
+  /** 下载进度 0-100（总大小未知时为 null） */
+  progress: number | null;
+}

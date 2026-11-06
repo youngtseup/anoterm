@@ -2,8 +2,10 @@
   <div class="flex h-screen flex-col">
     <TitleBar
       :is-dark="isDark"
-      :checking-update="checkingUpdate"
+      :checking-update="updateState.checking"
       :interactive="settingsOpen"
+      :update-status="updateState.status"
+      :update-progress="updateState.progress"
       @home="goHome"
       @toggle-theme="toggleTheme"
       @check-update="handleCheckUpdate"
@@ -184,36 +186,8 @@
       </AlertDialogContent>
     </AlertDialog>
 
-    <!-- 更新对话框（下载中不可关闭） -->
-    <Dialog v-model:open="updateOpen">
-      <DialogContent
-        class="sm:max-w-md"
-        :show-close-button="updatePhase === 'confirm'"
-        @escape-key-down="updatePhase === 'downloading' && $event.preventDefault()"
-      >
-        <DialogHeader>
-          <DialogTitle>发现新版本 v{{ updateInfo?.version }}</DialogTitle>
-          <DialogDescription
-            v-if="updateInfo?.body"
-            class="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-md border border-border bg-muted/40 p-3 text-sm leading-relaxed"
-          >
-            {{ updateInfo.body }}
-          </DialogDescription>
-          <DialogDescription v-else class="sr-only">发现新版本</DialogDescription>
-        </DialogHeader>
-        <div
-          v-if="updatePhase === 'downloading'"
-          class="flex items-center gap-3 text-sm text-muted-foreground"
-        >
-          <Loader2 class="size-4 animate-spin" />
-          <span>正在下载更新 {{ updateProgress }}%</span>
-        </div>
-        <DialogFooter v-else>
-          <Button variant="outline" @click="updateOpen = false">暂不更新</Button>
-          <Button :disabled="checkingUpdate" @click="startUpdate">立即更新</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <!-- 更新对话框（下载/安装状态同步给标题栏） -->
+    <UpdateDialog ref="updaterRef" @status="handleUpdateStatus" />
 
     <Toaster :theme="isDark ? 'dark' : 'light'" position="bottom-right" :rich-colors="true" />
   </div>
@@ -226,13 +200,11 @@
   - 职责：数据加载与 CRUD、tab 生命周期编排，具体会话逻辑下沉到 ConnectionView
 -->
 <script setup lang="ts">
-import { computed, markRaw, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { toast } from "vue-sonner";
-import { ArrowLeft, ArrowRight, Loader2 } from "@lucide/vue";
+import { ArrowLeft, ArrowRight } from "@lucide/vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { check, type Update } from "@tauri-apps/plugin-updater";
-import { relaunch } from "@tauri-apps/plugin-process";
 import TitleBar from "./components/TitleBar.vue";
 import Sidebar from "./components/Sidebar.vue";
 import Dashboard from "./components/Dashboard.vue";
@@ -241,7 +213,7 @@ import TabBar from "./components/TabBar.vue";
 import AddGroupDialog from "./components/AddGroupDialog.vue";
 import AddConnectionDialog from "./components/AddConnectionDialog.vue";
 import SettingsDialog from "./components/SettingsDialog.vue";
-import { Button } from "./components/ui/button";
+import UpdateDialog from "./components/UpdateDialog.vue";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -252,14 +224,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "./components/ui/alert-dialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "./components/ui/dialog";
 import { Toaster } from "./components/ui/sonner";
 import {
   clearRecent,
@@ -282,6 +246,7 @@ import {
   type Group,
   type RecentItem,
   type TreeOrder,
+  type UpdateStatusPayload,
 } from "./types";
 import { useTabs } from "./composables/useTabs";
 import { useTheme } from "./composables/useTheme";
@@ -290,6 +255,22 @@ import { useTheme } from "./composables/useTheme";
 const { isDark, toggleTheme } = useTheme();
 const sidebarCollapsed = ref(false);
 const settingsOpen = ref(false);
+
+// ---------- 更新状态（由 UpdateDialog 同步给标题栏） ----------
+const updaterRef = ref<InstanceType<typeof UpdateDialog> | null>(null);
+const updateState = ref<UpdateStatusPayload>({
+  checking: false,
+  status: "idle",
+  progress: null,
+});
+
+function handleUpdateStatus(payload: UpdateStatusPayload) {
+  updateState.value = payload;
+}
+
+function handleCheckUpdate() {
+  updaterRef.value?.checkForUpdates();
+}
 
 // ---------- 数据状态 ----------
 const groups = ref<Group[]>([]);
@@ -560,72 +541,6 @@ function handleSelectRecent(id: string) {
     return;
   }
   handleSelect(id);
-}
-
-// ---------- 检查更新 ----------
-const checkingUpdate = ref(false);
-const updateOpen = ref(false);
-const updatePhase = ref<"confirm" | "downloading">("confirm");
-const updateProgress = ref(0);
-/** Update 实例使用 WeakMap 私有字段，不能被 Vue 响应式代理包裹（否则调用 update 方法时报错） */
-const updateInfo = ref<{ version: string; body?: string; update: Update } | null>(null);
-
-/** 判断当前是否为 Windows（Windows 下安装完成后应用会自动退出运行安装器） */
-function isWindowsPlatform() {
-  return navigator.userAgent.toLowerCase().includes("win");
-}
-
-async function handleCheckUpdate() {
-  if (checkingUpdate.value) return;
-  checkingUpdate.value = true;
-  try {
-    const update = await check();
-    if (!update) {
-      toast.success("当前已是最新版本");
-      return;
-    }
-    updateInfo.value = {
-      version: update.version,
-      body: update.body ?? undefined,
-      update: markRaw(update),
-    };
-    updatePhase.value = "confirm";
-    updateOpen.value = true;
-  } catch (e) {
-    notifyError(e);
-  } finally {
-    checkingUpdate.value = false;
-  }
-}
-
-async function startUpdate() {
-  const info = updateInfo.value;
-  if (!info) return;
-  updatePhase.value = "downloading";
-  updateProgress.value = 0;
-  let downloaded = 0;
-  let total = 0;
-  try {
-    await info.update.downloadAndInstall((event) => {
-      if (event.event === "Started") {
-        total = event.data.contentLength ?? 0;
-      } else if (event.event === "Progress") {
-        downloaded += event.data.chunkLength;
-        if (total > 0) {
-          updateProgress.value = Math.min(100, Math.round((downloaded / total) * 100));
-        }
-      }
-    });
-    // Windows 下 install 会自动退出应用并启动安装器；macOS/Linux 需手动重启
-    if (!isWindowsPlatform()) {
-      toast.success("更新完成，正在重启应用…");
-      await relaunch();
-    }
-    updateOpen.value = false;
-  } catch (e) {
-    updateOpen.value = false;
-    notifyError(e);
-  }
 }
 
 async function handleClearRecent() {

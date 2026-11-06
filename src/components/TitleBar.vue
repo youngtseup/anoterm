@@ -35,21 +35,71 @@
             </TooltipTrigger>
             <TooltipContent side="bottom">GitHub</TooltipContent>
           </Tooltip>
-          <Tooltip>
-            <TooltipTrigger as-child>
-              <Button
-                variant="ghost"
-                size="icon"
-                class="size-8"
-                :disabled="checkingUpdate"
-                @click="emit('checkUpdate')"
-              >
-                <Loader2 v-if="checkingUpdate" class="size-4 animate-spin" />
-                <RefreshCw v-else class="size-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">检查更新</TooltipContent>
-          </Tooltip>
+          <div class="flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="relative size-8"
+                  :disabled="checkingUpdate"
+                  @click="emit('checkUpdate')"
+                >
+                  <span
+                    v-if="updateStatus === 'downloading'"
+                    class="relative flex size-6 items-center justify-center"
+                  >
+                    <svg
+                      v-if="updateProgress != null"
+                      class="absolute inset-0 size-6 -rotate-90"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                    >
+                      <circle
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        class="text-muted-foreground/30"
+                      />
+                      <circle
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        class="text-primary transition-[stroke-dashoffset] duration-150"
+                        :stroke-dasharray="updateRingLength"
+                        :stroke-dashoffset="updateRingOffset"
+                      />
+                    </svg>
+                    <Loader2 v-else class="size-4 animate-spin" />
+                    <span
+                      v-if="updateProgress != null"
+                      class="relative text-[9px] leading-none font-medium tabular-nums text-foreground"
+                    >
+                      {{ updateProgress }}
+                    </span>
+                  </span>
+                  <Loader2
+                    v-else-if="checkingUpdate || updateStatus === 'installing'"
+                    class="size-4 animate-spin"
+                  />
+                  <Download v-else-if="updateStatus === 'downloaded'" class="size-4 text-primary" />
+                  <RefreshCw v-else class="size-4" />
+                  <span
+                    v-if="updateStatus === 'downloaded'"
+                    class="absolute top-1 right-1 size-1.5 rounded-full bg-primary"
+                  />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{{ updateTooltip }}</TooltipContent>
+            </Tooltip>
+          </div>
           <Tooltip>
             <TooltipTrigger as-child>
               <Button variant="ghost" size="icon" class="size-8" @click="emit('toggleTheme')">
@@ -98,15 +148,53 @@
  *   左侧留白避让，品牌信息移至侧边栏顶部，右侧仅保留功能按钮
  * - 空白区域按下可拖动窗口（button 等选择器内的控件除外），双击最大化
  */
-import { onMounted, ref } from "vue";
-import { Copy, Loader2, Maximize, Minus, Moon, RefreshCw, Settings, Sun, X } from "@lucide/vue";
+import { computed, onMounted, ref } from "vue";
+import {
+  Copy,
+  Download,
+  Loader2,
+  Maximize,
+  Minus,
+  Moon,
+  RefreshCw,
+  Settings,
+  Sun,
+  X,
+} from "@lucide/vue";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "./ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import appIcon from "../assets/app-icon.png";
+import type { UpdateStatus } from "../types";
 
-defineProps<{ isDark: boolean; checkingUpdate?: boolean; interactive?: boolean }>();
+const props = defineProps<{
+  isDark: boolean;
+  checkingUpdate?: boolean;
+  interactive?: boolean;
+  updateStatus?: UpdateStatus;
+  updateProgress?: number | null;
+}>();
+
+const updateRingLength = 2 * Math.PI * 10;
+const updateRingOffset = computed(() =>
+  props.updateProgress != null ? updateRingLength * (1 - props.updateProgress / 100) : 0,
+);
+
+const updateTooltip = computed(() => {
+  switch (props.updateStatus) {
+    case "downloading":
+      return props.updateProgress != null
+        ? `正在下载更新 ${props.updateProgress}%，点击查看`
+        : "正在下载更新，点击查看";
+    case "downloaded":
+      return "更新已就绪，点击安装";
+    case "installing":
+      return "正在安装更新";
+    default:
+      return props.checkingUpdate ? "正在检查更新" : "检查更新";
+  }
+});
 
 const emit = defineEmits<{
   home: [];

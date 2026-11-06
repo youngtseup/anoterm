@@ -1,0 +1,31 @@
+name: Update Manifest Notes
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  sync-notes:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync release notes into latest.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if ! gh release download "$TAG" --pattern latest.json --dir . --clobber; then
+            echo "Release $TAG 未包含 latest.json，跳过"
+            exit 0
+          fi
+
+          gh release view "$TAG" --json body --jq .body > release-body.md
+          node scripts/sync-latest-notes.mjs \
+            --body release-body.md \
+            --file latest.json \
+            --fallback "Anoterm ${TAG}"
+          gh release upload "$TAG" latest.json --clobber

@@ -79,9 +79,10 @@ chmod +x Anoterm_*.AppImage
 
 ## 自动更新
 
-应用内置 [Tauri Updater](https://v2.tauri.app/plugin/updater/)，点击标题栏「云下载」图标即可检查并安装更新。
+应用内置 [Tauri Updater](https://v2.tauri.app/plugin/updater/)，点击标题栏更新图标即可检查新版本。更新包会在后台下载，可隐藏对话框继续使用；下载完成后再次点击更新按钮，手动确认安装。
 
 - **更新源**：GitHub Releases 的 [`latest.json`](https://github.com/youngtseup/anoterm/releases/latest/download/latest.json)。
+- **更新内容**：发布后自动将 Release 正文中的「变更日志 / 变更说明」同步到 `latest.json` 的 `notes`，应用内更新弹窗直接展示。
 - **签名校验**：更新包使用 minisign（Ed25519）签名，公钥内置于应用配置。
 - **普通用户**只需下载安装包；`.sig` 与 `.app.tar.gz` 为更新器使用的文件，无需手动安装。
 
