@@ -81,6 +81,9 @@
           />
         </div>
       </main>
+
+      <!-- 设置面板的挂载点：放在主内容区内，窗口缩放时与主界面同步布局 -->
+      <div v-show="settingsOpen" id="settings-host" class="absolute inset-0 z-40"></div>
     </div>
 
     <!-- 对话框 -->
@@ -190,6 +193,9 @@
     <UpdateDialog ref="updaterRef" @status="handleUpdateStatus" />
 
     <Toaster :theme="isDark ? 'dark' : 'light'" position="bottom-right" :rich-colors="true" />
+
+    <!-- 无边框窗口的边缘缩放热区 -->
+    <WindowResizeHandles />
   </div>
 </template>
 
@@ -214,6 +220,7 @@ import AddGroupDialog from "./components/AddGroupDialog.vue";
 import AddConnectionDialog from "./components/AddConnectionDialog.vue";
 import SettingsDialog from "./components/SettingsDialog.vue";
 import UpdateDialog from "./components/UpdateDialog.vue";
+import WindowResizeHandles from "./components/WindowResizeHandles.vue";
 import {
   AlertDialog,
   AlertDialogAction,

@@ -32,12 +32,28 @@ function persistTheme(dark: boolean) {
 
 const isDark: Ref<boolean> = ref(readStoredTheme() ?? false);
 
+/**
+ * 原生窗口与 WebView 的底色跟随主题：快速拖动窗口缩放时，
+ * WebView 尚未重绘的区域会露出自己的底色，若保持默认白底就会闪烁。
+ */
+function syncWindowBackground() {
+  if (!("__TAURI_INTERNALS__" in window)) return;
+  import("@tauri-apps/api/webviewWindow")
+    .then(({ getCurrentWebviewWindow }) => {
+      const [r, g, b] = readThemeRgb("--background");
+      return getCurrentWebviewWindow().setBackgroundColor([r, g, b]);
+    })
+    .catch(() => {});
+}
+
 // 主题切换：shadcn 变量作用于 html 的 .dark 类，同时持久化偏好
 watch(
   isDark,
   (v) => {
     document.documentElement.classList.toggle("dark", v);
     persistTheme(v);
+    // 等样式（CSS 变量）生效后再读取背景色
+    requestAnimationFrame(syncWindowBackground);
   },
   { immediate: true },
 );

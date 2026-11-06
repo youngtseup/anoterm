@@ -1,7 +1,8 @@
 <template>
   <Dialog v-model:open="open">
     <DialogContent
-      class="inset-x-0 top-10 bottom-0 flex max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:max-w-none"
+      portal-to="#settings-host"
+      class="absolute inset-0 flex max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 p-0 sm:max-w-none"
       :show-close-button="false"
       @pointer-down-outside.prevent
     >
