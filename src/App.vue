@@ -82,8 +82,9 @@
         </div>
       </main>
 
-      <!-- 设置面板的挂载点：放在主内容区内，窗口缩放时与主界面同步布局 -->
-      <div v-show="settingsOpen" id="settings-host" class="absolute inset-0 z-40"></div>
+      <!-- 设置面板的挂载点：放在主内容区内，窗口缩放时与主界面同步布局。
+           不能随关闭立即 v-show 隐藏，否则退场动画无法结束，遮罩与滚动锁不会释放 -->
+      <div id="settings-host" class="pointer-events-none absolute inset-0 z-40"></div>
     </div>
 
     <!-- 对话框 -->
