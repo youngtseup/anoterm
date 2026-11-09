@@ -7,7 +7,7 @@
 
 import { ref, watch } from "vue";
 
-export type SortKey = "name" | "size" | "mtime";
+export type SortKey = "name" | "type" | "size" | "mtime";
 export type SortDirection = "asc" | "desc";
 export type SftpSide = "local" | "remote";
 
@@ -17,7 +17,7 @@ interface SortState {
 }
 
 const DEFAULT: SortState = { key: "mtime", dir: "desc" };
-const SORT_KEYS: SortKey[] = ["name", "size", "mtime"];
+const SORT_KEYS: SortKey[] = ["name", "type", "size", "mtime"];
 
 function storageKey(side: SftpSide): string {
   return `anoterm.sftp.sort.${side}`;
@@ -48,13 +48,13 @@ function createState(side: SftpSide) {
     );
   });
 
-  /** 同一字段切换升降序；切换到新字段时名称默认升序，大小/时间默认降序 */
+  /** 同一字段切换升降序；切换到新字段时名称/类型默认升序，大小/时间默认降序 */
   function toggleSort(key: SortKey) {
     if (sortKey.value === key) {
       sortDir.value = sortDir.value === "asc" ? "desc" : "asc";
     } else {
       sortKey.value = key;
-      sortDir.value = key === "name" ? "asc" : "desc";
+      sortDir.value = key === "name" || key === "type" ? "asc" : "desc";
     }
   }
 

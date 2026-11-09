@@ -110,6 +110,62 @@
                 </button>
               </TableHead>
               <TableHead
+                :class="layout === 'single' ? 'w-[110px]' : 'w-[100px]'"
+                :aria-sort="ariaSort('type')"
+              >
+                <div class="flex items-center gap-1">
+                  <button
+                    type="button"
+                    class="flex cursor-pointer items-center gap-1 transition-colors select-none hover:text-foreground"
+                    :title="
+                      sortKey === 'type'
+                        ? `按类型排序：${sortDir === 'asc' ? '升序' : '降序'}，点击切换`
+                        : '按类型排序'
+                    "
+                    @click="toggleSort('type')"
+                  >
+                    类型
+                    <SortIndicator :active="sortKey === 'type' ? sortDir : null" />
+                  </button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger as-child>
+                      <button
+                        type="button"
+                        class="flex items-center gap-0.5 rounded-sm p-0.5 transition-colors hover:bg-muted hover:text-foreground"
+                        :class="typeFilter.size > 0 ? 'text-primary' : 'text-muted-foreground'"
+                        :title="
+                          typeFilter.size > 0
+                            ? `已筛选 ${typeFilter.size} 种类型，点击修改`
+                            : '按类型筛选'
+                        "
+                        aria-label="按类型筛选"
+                      >
+                        <ListFilter class="size-3.5" />
+                        <span v-if="typeFilter.size > 0" class="text-[10px] leading-none">
+                          {{ typeFilter.size }}
+                        </span>
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" class="min-w-40">
+                      <DropdownMenuLabel>按类型筛选</DropdownMenuLabel>
+                      <DropdownMenuCheckboxItem
+                        v-for="option in typeOptions"
+                        :key="option.type"
+                        :model-value="typeFilter.has(option.type)"
+                        @select.prevent="toggleTypeFilter(option.type)"
+                      >
+                        <span class="flex-1 truncate">{{ option.type }}</span>
+                        <span class="text-xs text-muted-foreground">{{ option.count }}</span>
+                      </DropdownMenuCheckboxItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem :disabled="typeFilter.size === 0" @click="clearTypeFilter">
+                        清除筛选
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </TableHead>
+              <TableHead
                 :class="layout === 'single' ? 'w-[100px]' : 'w-[80px]'"
                 :aria-sort="ariaSort('size')"
               >
@@ -169,10 +225,11 @@
               </TableCell>
               <TableCell class="text-muted-foreground">—</TableCell>
               <TableCell class="text-muted-foreground">—</TableCell>
+              <TableCell class="text-muted-foreground">—</TableCell>
               <TableCell v-if="kind === 'remote' && layout === 'single'"></TableCell>
             </TableRow>
             <TableRow
-              v-for="(row, index) in sortedEntries"
+              v-for="(row, index) in visibleEntries"
               :key="row.path"
               class="cursor-default"
               :class="
@@ -191,6 +248,7 @@
                   <span class="truncate">{{ row.name }}</span>
                 </div>
               </TableCell>
+              <TableCell class="text-muted-foreground">{{ entryType(row) }}</TableCell>
               <TableCell class="text-muted-foreground">{{ formatSize(row) }}</TableCell>
               <TableCell class="text-muted-foreground">{{ formatTime(row) }}</TableCell>
               <TableCell v-if="kind === 'remote' && layout === 'single'" class="text-right">
@@ -225,6 +283,15 @@
           class="px-5 py-16 text-center text-[13px] text-muted-foreground"
         >
           空目录
+        </div>
+        <div
+          v-else-if="!loading && visibleEntries.length === 0"
+          class="px-5 py-16 text-center text-[13px] text-muted-foreground"
+        >
+          没有符合筛选条件的项目
+          <Button variant="link" size="sm" class="h-auto p-0" @click="clearTypeFilter">
+            清除筛选
+          </Button>
         </div>
       </div>
 
@@ -300,7 +367,8 @@
  * - 双栏模式：行多选（Ctrl/Shift），工具栏「上传/下载」或双击文件把选中项交给宿主传输
  * - 单栏模式（仅远端）：保留系统对话框上传/下载与行内操作链接
  * - 通用操作：地址栏跳转、新建文件夹、重命名、删除、右键菜单
- * - 列表排序：名称/大小/修改时间，文件夹置顶，偏好按本地/远端分别持久化
+ * - 列表排序：名称/类型/大小/修改时间，文件夹置顶，偏好按本地/远端分别持久化
+ * - 类型列按扩展名展示，表头筛选按钮支持「文件夹/非文件夹」多选，切换目录时重置
  */
 import { computed, onMounted, ref, watch } from "vue";
 import { toast } from "vue-sonner";
@@ -312,6 +380,7 @@ import {
   Folder,
   FolderPlus,
   HardDrive,
+  ListFilter,
   Loader2,
   RefreshCw,
   Upload,
@@ -333,6 +402,7 @@ import {
   sftpRemove,
   sftpRename,
 } from "../api";
+import { DIR_TYPE, entryType } from "../lib/fileType";
 import {
   isRootPath,
   joinLocal,
@@ -352,8 +422,10 @@ import {
 } from "./ui/dialog";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
@@ -399,9 +471,27 @@ const pathInput = ref("");
 const selected = ref<Set<string>>(new Set());
 /** Shift 连选的锚点下标 */
 const lastIndex = ref<number | null>(null);
+/** 类型筛选（多选：文件夹 / 非文件夹，切换目录时重置） */
+const typeFilter = ref<Set<string>>(new Set());
+/** 非文件夹的筛选标签 */
+const NON_DIR_TYPE = "非文件夹";
 
 const { sortKey, sortDir, toggleSort } = useSftpSort(props.kind);
 const nameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+/** 条目的筛选归类：仅区分文件夹与非文件夹 */
+function filterTypeOf(entry: Pick<SftpEntry, "isDir">): string {
+  return entry.isDir ? DIR_TYPE : NON_DIR_TYPE;
+}
+
+/** 当前目录的类型筛选项及数量 */
+const typeOptions = computed(() => {
+  const dirCount = entries.value.filter((entry) => entry.isDir).length;
+  return [
+    { type: DIR_TYPE, count: dirCount },
+    { type: NON_DIR_TYPE, count: entries.value.length - dirCount },
+  ].filter((option) => option.count > 0);
+});
 
 /** 文件夹始终置顶，再按当前字段排序；字段相同时按名称升序兜底 */
 const sortedEntries = computed(() => {
@@ -410,12 +500,34 @@ const sortedEntries = computed(() => {
     if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
     let result = 0;
     if (sortKey.value === "name") result = nameCollator.compare(a.name, b.name);
+    else if (sortKey.value === "type") result = nameCollator.compare(entryType(a), entryType(b));
     else if (sortKey.value === "size") result = (a.size ?? 0) - (b.size ?? 0);
     else result = (a.mtime ?? 0) - (b.mtime ?? 0);
     if (result === 0) return nameCollator.compare(a.name, b.name);
     return result * direction;
   });
 });
+
+/** 应用类型筛选后的可见条目（未选类型时显示全部） */
+const visibleEntries = computed(() =>
+  typeFilter.value.size === 0
+    ? sortedEntries.value
+    : sortedEntries.value.filter((entry) => typeFilter.value.has(filterTypeOf(entry))),
+);
+
+/** 切换单个类型筛选（多选） */
+function toggleTypeFilter(type: string) {
+  const next = new Set(typeFilter.value);
+  if (next.has(type)) next.delete(type);
+  else next.add(type);
+  typeFilter.value = next;
+}
+
+/** 清空类型筛选 */
+function clearTypeFilter() {
+  if (typeFilter.value.size === 0) return;
+  typeFilter.value = new Set();
+}
 
 function ariaSort(key: SortKey): "ascending" | "descending" | "none" {
   if (sortKey.value !== key) return "none";
@@ -424,7 +536,7 @@ function ariaSort(key: SortKey): "ascending" | "descending" | "none" {
 
 const isAtRoot = computed(() => isRootPath(props.kind, cwd.value));
 const selectedEntries = computed(() =>
-  sortedEntries.value.filter((e) => selected.value.has(e.path)),
+  visibleEntries.value.filter((e) => selected.value.has(e.path)),
 );
 const hasSelection = computed(() => selectedEntries.value.length > 0);
 const transferDisabled = computed(() => !hasSelection.value || !!props.busy || !props.ready);
@@ -444,6 +556,7 @@ function clearSelection() {
  */
 async function load(path: string) {
   if (!path) return;
+  const pathChanged = path !== cwd.value;
   loading.value = true;
   try {
     const list =
@@ -451,6 +564,15 @@ async function load(path: string) {
     cwd.value = path;
     pathInput.value = path;
     entries.value = list;
+    if (pathChanged) {
+      // 切换目录即重置类型筛选
+      typeFilter.value = new Set();
+    } else {
+      // 同目录刷新保留筛选，但剔除已不存在的类型
+      const available = new Set(list.map((entry) => filterTypeOf(entry)));
+      const remaining = [...typeFilter.value].filter((type) => available.has(type));
+      if (remaining.length !== typeFilter.value.size) typeFilter.value = new Set(remaining);
+    }
     clearSelection();
   } catch (e) {
     notifyError(e);
@@ -500,7 +622,7 @@ function onRowClick(ev: MouseEvent, row: SftpEntry, index: number) {
   const next = new Set(selected.value);
   if (ev.shiftKey && lastIndex.value !== null) {
     const [from, to] = [lastIndex.value, index].sort((a, b) => a - b);
-    for (let i = from; i <= to; i++) next.add(sortedEntries.value[i].path);
+    for (let i = from; i <= to; i++) next.add(visibleEntries.value[i].path);
   } else if (ev.ctrlKey || ev.metaKey) {
     if (next.has(row.path)) next.delete(row.path);
     else next.add(row.path);
@@ -766,6 +888,9 @@ watch(
 watch([sortKey, sortDir], () => {
   lastIndex.value = null;
 });
+
+// 筛选变化后清空选择，避免隐藏行仍被传输/删除
+watch(typeFilter, clearSelection);
 
 // 远端会话就绪后加载根目录
 watch(
