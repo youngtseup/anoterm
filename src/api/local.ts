@@ -15,6 +15,11 @@ export async function localList(path: string): Promise<SftpEntry[]> {
   return await invoke<SftpEntry[]>("local_list", { path });
 }
 
+/** 列出本地可用盘符（Windows；其他平台返回根目录） */
+export async function localDrives(): Promise<string[]> {
+  return await invoke<string[]>("local_drives");
+}
+
 /** 创建本地目录 */
 export async function localMkdir(path: string): Promise<void> {
   await invoke("local_mkdir", { path });

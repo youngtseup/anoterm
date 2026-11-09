@@ -18,7 +18,7 @@ use db_commands::{
     clear_recent, create_connection, create_group, delete_connection, delete_group, list_groups,
     list_recent, rename_group, reorder_tree, update_connection,
 };
-use local_fs::{local_home, local_list, local_mkdir, local_remove, local_rename};
+use local_fs::{local_drives, local_home, local_list, local_mkdir, local_remove, local_rename};
 use ssh::connect::{ssh_confirm_host_key, ssh_connect, ssh_test_connection};
 use ssh::sftp::{
     sftp_cancel_transfer, sftp_canonicalize, sftp_download_items, sftp_list, sftp_mkdir,
@@ -123,6 +123,7 @@ pub fn run() {
             sftp_resolve_conflict,
             // 本地文件系统命令（双栏模式）
             local_home,
+            local_drives,
             local_list,
             local_mkdir,
             local_rename,

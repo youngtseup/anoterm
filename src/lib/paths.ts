@@ -50,3 +50,79 @@ export function normalizeLocalPath(input: string): string {
   if (/^[A-Za-z]:$/.test(p)) p += "\\";
   return p;
 }
+
+/** 虚拟「此电脑」段的路径标记（仅用于盘符切换菜单） */
+export const DRIVES_PATH = "__drives__";
+
+/** 地址栏面包屑的一段 */
+export interface PathSegment {
+  name: string;
+  path: string;
+  /** 是否为虚拟段（如「此电脑」，用于列出盘符而非目录） */
+  drives?: boolean;
+}
+
+/** 在 Windows 路径最前面插入「此电脑」，用于切换盘符 */
+function withDrivesRoot(segments: PathSegment[]): PathSegment[] {
+  return [{ name: "此电脑", path: DRIVES_PATH, drives: true }, ...segments];
+}
+
+/** 远端路径 → 面包屑（根为 /，逐级累积） */
+export function remoteBreadcrumbs(path: string): PathSegment[] {
+  if (!path) return [];
+  const segments: PathSegment[] = [{ name: "/", path: "/" }];
+  let current = "";
+  for (const part of path.split("/").filter(Boolean)) {
+    current += "/" + part;
+    segments.push({ name: part, path: current });
+  }
+  return segments;
+}
+
+/** 本地路径 → 面包屑（兼容 Windows 盘符、UNC 与 Unix 根） */
+export function localBreadcrumbs(path: string): PathSegment[] {
+  if (!path) return [];
+  // UNC：\\server\share 作为根级条目
+  if (/^[\\/]{2}/.test(path)) {
+    const parts = path.split(/[\\/]+/).filter(Boolean);
+    if (parts.length >= 2) {
+      const root = "\\\\" + parts[0] + "\\" + parts[1];
+      const segments: PathSegment[] = [{ name: root, path: root }];
+      let current = root;
+      for (const part of parts.slice(2)) {
+        current += "\\" + part;
+        segments.push({ name: part, path: current });
+      }
+      return withDrivesRoot(segments);
+    }
+    const root = parts.length === 1 ? "\\\\" + parts[0] : "\\\\";
+    return withDrivesRoot([{ name: root, path: root }]);
+  }
+  // Windows 盘符
+  const drive = /^([A-Za-z]:)[\\/]?/.exec(path);
+  if (drive) {
+    const root = drive[1] + "\\";
+    const segments: PathSegment[] = [{ name: drive[1], path: root }];
+    let current = root;
+    for (const part of path
+      .slice(drive[0].length)
+      .split(/[\\/]+/)
+      .filter(Boolean)) {
+      current = current.endsWith("\\") ? current + part : current + "\\" + part;
+      segments.push({ name: part, path: current });
+    }
+    return withDrivesRoot(segments);
+  }
+  // Unix 绝对路径
+  if (path.startsWith("/")) {
+    const segments: PathSegment[] = [{ name: "/", path: "/" }];
+    let current = "";
+    for (const part of path.split("/").filter(Boolean)) {
+      current += "/" + part;
+      segments.push({ name: part, path: current });
+    }
+    return segments;
+  }
+  // 相对路径等无法安全拆分的场景：降级为单段
+  return [{ name: path, path }];
+}

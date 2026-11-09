@@ -14,34 +14,15 @@
         <RefreshCw class="size-4" />
       </Button>
 
-      <div
-        class="relative min-w-[120px] flex-1"
+      <PathBar
+        :kind="kind"
+        :path="cwd"
+        :list-dirs="listChildDirs"
+        :list-drives="localDrives"
+        class="min-w-[120px] flex-1"
         :class="layout === 'single' ? 'max-w-[480px]' : ''"
-      >
-        <HardDrive
-          v-if="kind === 'local'"
-          class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-        />
-        <Folder
-          v-else
-          class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-        />
-        <Input
-          v-model="pathInput"
-          class="h-8 pr-8 pl-8"
-          :placeholder="kind === 'local' ? '输入本地路径，回车跳转' : '输入路径，回车跳转'"
-          @keyup.enter="goToPath"
-          @focus="onPathFocus"
-        />
-        <button
-          v-if="pathInput"
-          type="button"
-          class="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-          @click="pathInput = ''"
-        >
-          <X class="size-4" />
-        </button>
-      </div>
+        @navigate="load"
+      />
 
       <div v-if="layout === 'single'" class="flex-1"></div>
 
@@ -231,7 +212,7 @@
             <TableRow
               v-for="(row, index) in visibleEntries"
               :key="row.path"
-              class="cursor-default"
+              class="cursor-default select-none"
               :class="
                 layout === 'dual' && isSelected(row)
                   ? 'bg-primary/10 hover:bg-primary/10'
@@ -242,7 +223,7 @@
               @contextmenu.prevent="onRowContextmenu($event, row, index)"
             >
               <TableCell>
-                <div class="flex items-center gap-1.5">
+                <div class="flex items-center gap-1.5" :title="row.name">
                   <Folder v-if="row.isDir" class="size-4 shrink-0 text-amber-500" />
                   <File v-else class="size-4 shrink-0 text-muted-foreground" />
                   <span class="truncate">{{ row.name }}</span>
@@ -366,7 +347,7 @@
  * - 远端面板会话由 ConnectionView 建立（ready 后才加载），本组件只调用 sftp_* 命令
  * - 双栏模式：行多选（Ctrl/Shift），工具栏「上传/下载」或双击文件把选中项交给宿主传输
  * - 单栏模式（仅远端）：保留系统对话框上传/下载与行内操作链接
- * - 通用操作：地址栏跳转、新建文件夹、重命名、删除、右键菜单
+ * - 通用操作：面包屑地址栏跳转/编辑、新建文件夹、重命名、删除、右键菜单
  * - 列表排序：名称/类型/大小/修改时间，文件夹置顶，偏好按本地/远端分别持久化
  * - 类型列按扩展名展示，表头筛选按钮支持「文件夹/非文件夹」多选，切换目录时重置
  */
@@ -379,18 +360,17 @@ import {
   File,
   Folder,
   FolderPlus,
-  HardDrive,
   ListFilter,
   Loader2,
   RefreshCw,
   Upload,
-  X,
 } from "@lucide/vue";
 import type { SftpEntry } from "../types";
 import type { SftpLayout } from "../composables/useSftpLayout";
 import { useSftpSort, type SortKey } from "../composables/useSftpSort";
 import { useSftpTransfer } from "../composables/useSftpTransfer";
 import {
+  localDrives,
   localHome,
   localList,
   localMkdir,
@@ -403,14 +383,7 @@ import {
   sftpRename,
 } from "../api";
 import { DIR_TYPE, entryType } from "../lib/fileType";
-import {
-  isRootPath,
-  joinLocal,
-  joinRemote,
-  localParent,
-  normalizeLocalPath,
-  remoteParent,
-} from "../lib/paths";
+import { isRootPath, joinLocal, joinRemote, localParent, remoteParent } from "../lib/paths";
 import { Button } from "./ui/button";
 import {
   Dialog,
@@ -430,6 +403,7 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import { Input } from "./ui/input";
+import PathBar from "./PathBar.vue";
 import SortIndicator from "./SortIndicator.vue";
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import TransferBar from "./TransferBar.vue";
@@ -465,8 +439,6 @@ const {
   cancel: cancelTransfer,
   resolveConflict: resolveTransferConflict,
 } = useSftpTransfer();
-/** 地址栏输入值 */
-const pathInput = ref("");
 /** 双栏模式多选（按完整路径） */
 const selected = ref<Set<string>>(new Set());
 /** Shift 连选的锚点下标 */
@@ -562,7 +534,6 @@ async function load(path: string) {
     const list =
       props.kind === "local" ? await localList(path) : await sftpList(props.tabId!, path);
     cwd.value = path;
-    pathInput.value = path;
     entries.value = list;
     if (pathChanged) {
       // 切换目录即重置类型筛选
@@ -581,23 +552,14 @@ async function load(path: string) {
   }
 }
 
-/** 地址栏聚焦时全选，方便直接输入新路径 */
-function onPathFocus(ev: FocusEvent) {
-  (ev.target as HTMLInputElement).select();
-}
-
-/** 地址栏回车：跳转到输入路径 */
-function goToPath() {
-  const raw = pathInput.value.trim();
-  if (!raw) return;
-  const target =
-    props.kind === "local" ? normalizeLocalPath(raw) : raw.startsWith("/") ? raw : "/" + raw;
-  if (target === cwd.value) return;
-  load(target);
-}
-
 async function refresh() {
   await load(cwd.value);
+}
+
+/** 地址栏下拉：列出指定路径下的目录 */
+async function listChildDirs(path: string): Promise<SftpEntry[]> {
+  const list = props.kind === "local" ? await localList(path) : await sftpList(props.tabId!, path);
+  return list.filter((entry) => entry.isDir);
 }
 
 /** 双击进入文件夹 */
@@ -619,19 +581,27 @@ function isSelected(row: SftpEntry): boolean {
 
 function onRowClick(ev: MouseEvent, row: SftpEntry, index: number) {
   if (props.layout !== "dual") return;
-  const next = new Set(selected.value);
+  const additive = ev.ctrlKey || ev.metaKey;
+  // Shift 连选：从锚点到当前行；按住 Ctrl 时叠加到已有选择，否则替换选择
   if (ev.shiftKey && lastIndex.value !== null) {
     const [from, to] = [lastIndex.value, index].sort((a, b) => a - b);
-    for (let i = from; i <= to; i++) next.add(visibleEntries.value[i].path);
-  } else if (ev.ctrlKey || ev.metaKey) {
+    const next = additive ? new Set(selected.value) : new Set<string>();
+    for (let i = from; i <= to; i++) {
+      const entry = visibleEntries.value[i];
+      if (entry) next.add(entry.path);
+    }
+    selected.value = next;
+    return;
+  }
+  const next = new Set(selected.value);
+  if (additive) {
     if (next.has(row.path)) next.delete(row.path);
     else next.add(row.path);
-    lastIndex.value = index;
   } else {
     next.clear();
     next.add(row.path);
-    lastIndex.value = index;
   }
+  lastIndex.value = index;
   selected.value = next;
 }
 

@@ -24,6 +24,32 @@ pub async fn local_list(path: String) -> Result<Vec<SftpEntry>, String> {
         .map_err(|e| e.to_string())?
 }
 
+/// 列出 Windows 可用盘符（其他平台返回根目录），用于地址栏盘符切换。
+#[tauri::command]
+pub async fn local_drives() -> Result<Vec<String>, String> {
+    tokio::task::spawn_blocking(list_drives)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+fn list_drives() -> Vec<String> {
+    #[cfg(windows)]
+    {
+        let mut drives = Vec::new();
+        for letter in b'A'..=b'Z' {
+            let root = format!("{}:\\", letter as char);
+            if Path::new(&root).exists() {
+                drives.push(root);
+            }
+        }
+        drives
+    }
+    #[cfg(not(windows))]
+    {
+        vec!["/".to_string()]
+    }
+}
+
 fn list_dir(path: &str) -> Result<Vec<SftpEntry>, String> {
     let mut out = Vec::new();
     let rd = std::fs::read_dir(path).map_err(|e| format!("读取目录失败: {e}"))?;
