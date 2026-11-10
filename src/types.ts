@@ -89,8 +89,36 @@ export interface RecentItem {
   host: string;
   port: number;
   username: string;
+  remark?: string;
   /** 最近使用时间（Unix 秒） */
   lastUsed: number;
+}
+
+/** 连接详情浮层展示的数据 */
+export interface ConnectionDetails {
+  name: string;
+  type: string;
+  host: string;
+  port: number;
+  username: string;
+  authType?: string;
+  remark?: string;
+  deleted?: boolean;
+}
+
+/** 连接类型的中文展示文案 */
+export function connectionTypeLabel(type: string): string {
+  if (type === "ssh") return "SSH";
+  if (type === "sftp") return "SFTP";
+  if (type === "ssh_sftp") return "SSH & SFTP";
+  return type;
+}
+
+/** 认证方式的中文展示文案 */
+export function connectionAuthLabel(authType?: string): string {
+  if (authType === "password") return "账号密码";
+  if (authType === "key") return "私钥";
+  return "未知";
 }
 
 /** 新建/更新连接的输入参数 */

@@ -45,45 +45,52 @@
 
     <div class="sidebar-content flex-1 overflow-y-auto px-2 pb-2">
       <div v-if="ungroupedConnections.length > 0" class="mb-1">
-        <div
-          class="connection-root-item group relative flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 pr-9 transition-colors select-none hover:bg-card"
-          :class="[
-            activeConn === conn.id ? 'bg-card shadow-sm' : '',
-            connDropClass(conn.id),
-            { 'drag-source': isConnDragSource(conn.id) },
-          ]"
+        <ConnectionDetailsPopover
           v-for="conn in ungroupedConnections"
           :key="`root-${conn.id}`"
-          :data-conn-id="conn.id"
-          :data-parent-group="UNGROUPED_GROUP_ID"
-          @dblclick="handleConnClick(conn)"
-          @pointerdown="
-            onPointerDown($event, {
-              kind: 'conn',
-              connId: conn.id,
-              groupId: UNGROUPED_GROUP_ID,
-            })
-          "
-          @contextmenu.prevent="openConnMenu($event, conn)"
+          :open="detailsConnId === conn.id"
+          :details="detailsConnId === conn.id ? details : null"
+          @update:open="(open) => handleDetailsOpen(open, conn)"
         >
-          <span class="size-[7px] shrink-0 rounded-full bg-muted-foreground"></span>
-          <span
-            class="truncate text-[13px]"
-            :class="activeConn === conn.id ? 'font-medium' : 'text-muted-foreground'"
+          <div
+            class="connection-root-item group relative flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 pr-9 transition-colors select-none hover:bg-card"
+            :class="[
+              activeConn === conn.id ? 'bg-card shadow-sm' : '',
+              detailsConnId === conn.id ? 'ring-1 ring-ring/30' : '',
+              connDropClass(conn.id),
+              { 'drag-source': isConnDragSource(conn.id) },
+            ]"
+            :data-conn-id="conn.id"
+            :data-parent-group="UNGROUPED_GROUP_ID"
+            @dblclick="handleConnClick(conn)"
+            @pointerdown="
+              onPointerDown($event, {
+                kind: 'conn',
+                connId: conn.id,
+                groupId: UNGROUPED_GROUP_ID,
+              })
+            "
+            @contextmenu.prevent="openConnMenu($event, conn)"
           >
-            {{ conn.name }}
-          </span>
-          <button
-            type="button"
-            class="absolute top-1/2 right-1.5 flex size-6 -translate-y-1/2 items-center justify-center rounded-md bg-card text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100"
-            title="更多操作"
-            aria-label="更多操作"
-            @pointerdown.stop
-            @click.stop="openConnMenu($event, conn)"
-          >
-            <Ellipsis class="size-4" />
-          </button>
-        </div>
+            <span class="size-[7px] shrink-0 rounded-full bg-muted-foreground"></span>
+            <span
+              class="truncate text-[13px]"
+              :class="activeConn === conn.id ? 'font-medium' : 'text-muted-foreground'"
+            >
+              {{ conn.name }}
+            </span>
+            <button
+              type="button"
+              class="absolute top-1/2 right-1.5 flex size-6 -translate-y-1/2 items-center justify-center rounded-md bg-card text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100"
+              title="更多操作"
+              aria-label="更多操作"
+              @pointerdown.stop
+              @click.stop="openConnMenu($event, conn)"
+            >
+              <Ellipsis class="size-4" />
+            </button>
+          </div>
+        </ConnectionDetailsPopover>
       </div>
 
       <div class="mb-0.5" v-for="group in realGroups" :key="group.id">
@@ -120,45 +127,52 @@
           class="connection-list relative ml-2.5 overflow-hidden pl-2.5 transition-[max-height] duration-200"
           :class="group.open ? 'max-h-[800px]' : 'max-h-0'"
         >
-          <div
-            class="connection-item group relative flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-[7px] pr-9 transition-colors select-none hover:bg-card"
-            :class="[
-              activeConn === conn.id ? 'bg-card shadow-sm' : '',
-              connDropClass(conn.id),
-              { 'drag-source': isConnDragSource(conn.id) },
-            ]"
+          <ConnectionDetailsPopover
             v-for="conn in group.connections"
             :key="conn.id"
-            :data-conn-id="conn.id"
-            :data-parent-group="group.id"
-            @dblclick="handleConnClick(conn)"
-            @pointerdown="
-              onPointerDown($event, {
-                kind: 'conn',
-                connId: conn.id,
-                groupId: group.id,
-              })
-            "
-            @contextmenu.prevent="openConnMenu($event, conn)"
+            :open="detailsConnId === conn.id"
+            :details="detailsConnId === conn.id ? details : null"
+            @update:open="(open) => handleDetailsOpen(open, conn)"
           >
-            <span class="size-[7px] shrink-0 rounded-full bg-muted-foreground"></span>
-            <span
-              class="truncate text-[13px]"
-              :class="activeConn === conn.id ? 'font-medium' : 'text-muted-foreground'"
+            <div
+              class="connection-item group relative flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-[7px] pr-9 transition-colors select-none hover:bg-card"
+              :class="[
+                activeConn === conn.id ? 'bg-card shadow-sm' : '',
+                detailsConnId === conn.id ? 'ring-1 ring-ring/30' : '',
+                connDropClass(conn.id),
+                { 'drag-source': isConnDragSource(conn.id) },
+              ]"
+              :data-conn-id="conn.id"
+              :data-parent-group="group.id"
+              @dblclick="handleConnClick(conn)"
+              @pointerdown="
+                onPointerDown($event, {
+                  kind: 'conn',
+                  connId: conn.id,
+                  groupId: group.id,
+                })
+              "
+              @contextmenu.prevent="openConnMenu($event, conn)"
             >
-              {{ conn.name }}
-            </span>
-            <button
-              type="button"
-              class="absolute top-1/2 right-1.5 flex size-6 -translate-y-1/2 items-center justify-center rounded-md bg-card text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100"
-              title="更多操作"
-              aria-label="更多操作"
-              @pointerdown.stop
-              @click.stop="openConnMenu($event, conn)"
-            >
-              <Ellipsis class="size-4" />
-            </button>
-          </div>
+              <span class="size-[7px] shrink-0 rounded-full bg-muted-foreground"></span>
+              <span
+                class="truncate text-[13px]"
+                :class="activeConn === conn.id ? 'font-medium' : 'text-muted-foreground'"
+              >
+                {{ conn.name }}
+              </span>
+              <button
+                type="button"
+                class="absolute top-1/2 right-1.5 flex size-6 -translate-y-1/2 items-center justify-center rounded-md bg-card text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100"
+                title="更多操作"
+                aria-label="更多操作"
+                @pointerdown.stop
+                @click.stop="openConnMenu($event, conn)"
+              >
+                <Ellipsis class="size-4" />
+              </button>
+            </div>
+          </ConnectionDetailsPopover>
         </div>
       </div>
 
@@ -205,17 +219,19 @@
  * - 分组/连接右键菜单使用 DropdownMenu（受控 open + 鼠标坐标锚点）
  * - macOS 下标题栏使用原生交通灯，品牌 Logo/名称显示在新增连接上方
  */
-import { computed, onBeforeUnmount, ref } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { ChevronRight, Ellipsis, FolderPlus, Plug } from "@lucide/vue";
 import {
   UNGROUPED_GROUP_ID,
   isUngroupedGroup,
   type Connection,
+  type ConnectionDetails,
   type ContextMenuItem,
   type Group,
   type TreeOrder,
 } from "../types";
 import { Button } from "./ui/button";
+import ConnectionDetailsPopover from "./ConnectionDetailsPopover.vue";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -244,6 +260,39 @@ const emit = defineEmits<{
 
 /** macOS 使用系统原生窗口控制按钮（交通灯在标题栏左侧） */
 const isMac = navigator.userAgent.toLowerCase().includes("mac");
+
+const detailsConnId = ref<string | null>(null);
+const details = ref<ConnectionDetails | null>(null);
+
+function buildDetails(conn: Connection): ConnectionDetails {
+  return {
+    name: conn.name,
+    type: conn.type,
+    host: conn.host,
+    port: conn.port,
+    username: conn.username,
+    authType: conn.authType,
+    remark: conn.remark,
+  };
+}
+
+function closeConnDetails() {
+  detailsConnId.value = null;
+  details.value = null;
+}
+
+function handleDetailsOpen(open: boolean, conn: Connection) {
+  if (open && Date.now() < ignoreClickUntil) {
+    closeConnDetails();
+    return;
+  }
+  if (open) {
+    detailsConnId.value = conn.id;
+    details.value = buildDetails(conn);
+  } else if (detailsConnId.value === conn.id) {
+    closeConnDetails();
+  }
+}
 
 // ---------- 右键菜单状态 ----------
 const menuOpen = ref(false);
@@ -277,17 +326,20 @@ function toggleGroup(group: Group) {
 }
 
 function handleGroupClick(group: Group) {
+  closeConnDetails();
   if (Date.now() < ignoreClickUntil) return;
   toggleGroup(group);
 }
 
 function handleConnClick(conn: Connection) {
+  closeConnDetails();
   if (Date.now() < ignoreClickUntil) return;
   emit("select", conn.id);
 }
 
 /** 打开分组操作菜单（右键或“更多”按钮） */
 function openGroupMenu(e: MouseEvent, group: Group) {
+  closeConnDetails();
   openMenu(
     e,
     [
@@ -305,6 +357,7 @@ function openGroupMenu(e: MouseEvent, group: Group) {
 
 /** 打开连接操作菜单（右键或“更多”按钮） */
 function openConnMenu(e: MouseEvent, conn: Connection) {
+  closeConnDetails();
   openMenu(
     e,
     [
@@ -356,6 +409,28 @@ const realGroups = computed(() => props.groups.filter((g) => !isUngroupedGroup(g
 
 const ungroupedConnections = computed(
   () => props.groups.find((g) => isUngroupedGroup(g))?.connections ?? [],
+);
+
+watch(
+  () => props.collapsed,
+  (collapsed) => {
+    if (collapsed) closeConnDetails();
+  },
+);
+
+watch(
+  () => props.groups,
+  () => {
+    if (!detailsConnId.value) return;
+    for (const group of props.groups) {
+      const connection = group.connections.find((conn) => conn.id === detailsConnId.value);
+      if (connection) {
+        details.value = buildDetails(connection);
+        return;
+      }
+    }
+    closeConnDetails();
+  },
 );
 
 function isGroupDragSource(id: string): boolean {
@@ -435,6 +510,7 @@ function onPointerDown(event: PointerEvent, source: DragSource) {
   pressTimer = window.setTimeout(() => {
     pressTimer = null;
     if (!pressState) return;
+    closeConnDetails();
     dragging.value = pressState.source;
     document.body.style.cursor = "grabbing";
     document.body.style.userSelect = "none";

@@ -141,6 +141,7 @@ export async function listRecent(): Promise<RecentItem[]> {
     host: r.host,
     port: r.port,
     username: r.username,
+    remark: r.remark,
     lastUsed: r.last_used,
   }));
 }

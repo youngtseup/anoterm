@@ -51,29 +51,37 @@
       </div>
 
       <div v-if="recentConnections.length > 0" class="py-1">
-        <div
-          class="flex cursor-pointer items-center justify-between px-5 py-3 transition-colors select-none hover:bg-muted/60"
-          v-for="(item, i) in recentConnections"
-          :key="i"
-          @dblclick="emit('select-recent', item.id)"
+        <ConnectionDetailsPopover
+          v-for="item in recentConnections"
+          :key="item.id"
+          :open="detailsRecentId === item.id"
+          :details="detailsRecentId === item.id ? details : null"
+          side="bottom"
+          @update:open="(open) => handleDetailsOpen(open, item)"
         >
-          <div class="flex items-center gap-3">
-            <div
-              class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:bg-blue-400/10 dark:text-blue-400"
-            >
-              <Monitor v-if="item.type === 'ssh'" class="size-4" />
-              <FolderOpen v-else-if="item.type === 'sftp'" class="size-4" />
-              <Coins v-else class="size-4" />
-            </div>
-            <div class="flex flex-col gap-0.5">
-              <span class="text-[13.5px] font-medium">{{ item.name }}</span>
-              <span class="text-xs text-muted-foreground"
-                >{{ item.host }}:{{ item.port }} · {{ item.username }}</span
+          <div
+            class="flex cursor-pointer items-center justify-between px-5 py-3 transition-colors select-none hover:bg-muted/60"
+            :class="detailsRecentId === item.id ? 'bg-muted/60' : ''"
+            @dblclick="openRecent(item)"
+          >
+            <div class="flex items-center gap-3">
+              <div
+                class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:bg-blue-400/10 dark:text-blue-400"
               >
+                <Monitor v-if="item.type === 'ssh'" class="size-4" />
+                <FolderOpen v-else-if="item.type === 'sftp'" class="size-4" />
+                <Coins v-else class="size-4" />
+              </div>
+              <div class="flex flex-col gap-0.5">
+                <span class="text-[13.5px] font-medium">{{ item.name }}</span>
+                <span class="text-xs text-muted-foreground"
+                  >{{ item.host }}:{{ item.port }} · {{ item.username }}</span
+                >
+              </div>
             </div>
+            <span class="text-xs text-muted-foreground">{{ fmtTime(item.lastUsed) }}</span>
           </div>
-          <span class="text-xs text-muted-foreground">{{ fmtTime(item.lastUsed) }}</span>
-        </div>
+        </ConnectionDetailsPopover>
       </div>
       <div v-else class="px-5 py-10 text-center text-[13px] text-muted-foreground">
         暂无最近连接记录
@@ -88,10 +96,11 @@
  * - 统计卡片：分组数 / 连接数 / 已连接数
  * - 最近连接列表：双击重新打开连接，可清空
  */
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import { CircleCheck, Coins, Folder, FolderOpen, Monitor, Plug } from "@lucide/vue";
-import { isUngroupedGroup, type Group, type RecentItem } from "../types";
+import { isUngroupedGroup, type ConnectionDetails, type Group, type RecentItem } from "../types";
 import { Button } from "./ui/button";
+import ConnectionDetailsPopover from "./ConnectionDetailsPopover.vue";
 
 const props = defineProps<{
   groups: Group[];
@@ -103,6 +112,72 @@ const emit = defineEmits<{
   "select-recent": [id: string];
   "clear-recent": [];
 }>();
+
+const detailsRecentId = ref<string | null>(null);
+const details = ref<ConnectionDetails | null>(null);
+
+function buildDetails(item: RecentItem): ConnectionDetails {
+  for (const group of props.groups) {
+    const connection = group.connections.find((conn) => conn.id === item.id);
+    if (!connection) continue;
+    return {
+      name: connection.name,
+      type: connection.type,
+      host: connection.host,
+      port: connection.port,
+      username: connection.username,
+      authType: connection.authType,
+      remark: connection.remark,
+    };
+  }
+  return {
+    name: item.name,
+    type: item.type,
+    host: item.host,
+    port: item.port,
+    username: item.username,
+    remark: item.remark,
+    deleted: true,
+  };
+}
+
+function closeDetails() {
+  detailsRecentId.value = null;
+  details.value = null;
+}
+
+function handleDetailsOpen(open: boolean, item: RecentItem) {
+  if (open) {
+    detailsRecentId.value = item.id;
+    details.value = buildDetails(item);
+  } else if (detailsRecentId.value === item.id) {
+    closeDetails();
+  }
+}
+
+function openRecent(item: RecentItem) {
+  closeDetails();
+  emit("select-recent", item.id);
+}
+
+watch(
+  () => props.recentConnections,
+  (items) => {
+    if (detailsRecentId.value && !items.some((item) => item.id === detailsRecentId.value)) {
+      closeDetails();
+    }
+  },
+);
+
+watch(
+  () => props.groups,
+  () => {
+    if (!detailsRecentId.value) return;
+    const item = props.recentConnections.find((entry) => entry.id === detailsRecentId.value);
+    if (item) details.value = buildDetails(item);
+    else closeDetails();
+  },
+);
 
 const groupCount = computed(() => props.groups.filter((group) => !isUngroupedGroup(group)).length);
 
