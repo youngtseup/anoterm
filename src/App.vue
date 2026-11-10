@@ -38,8 +38,8 @@
           :title="sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
           @click="sidebarCollapsed = !sidebarCollapsed"
         >
-          <ArrowLeft v-if="!sidebarCollapsed" class="size-3.5" />
-          <ArrowRight v-else class="size-3.5" />
+          <ChevronLeft v-if="!sidebarCollapsed" class="size-3.5" />
+          <ChevronRight v-else class="size-3.5" />
         </button>
       </div>
 
@@ -213,7 +213,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { toast } from "vue-sonner";
-import { ArrowLeft, ArrowRight } from "@lucide/vue";
+import { ChevronLeft, ChevronRight } from "@lucide/vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import TitleBar from "./components/TitleBar.vue";
