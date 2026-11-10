@@ -2,13 +2,13 @@
   <!-- 更新对话框（安装中不可关闭，下载中可隐藏到后台） -->
   <Dialog v-model:open="open">
     <DialogContent
-      class="sm:max-w-md"
+      class="gap-5 sm:max-w-2xl"
       :show-close-button="updatePhase !== 'installing'"
       @escape-key-down="updatePhase === 'installing' && $event.preventDefault()"
     >
-      <DialogHeader>
+      <DialogHeader class="gap-3">
         <DialogTitle>发现新版本 v{{ updateInfo?.version }}</DialogTitle>
-        <div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
           <span>
             当前版本
             <span class="font-mono text-foreground">v{{ updateInfo?.currentVersion }}</span>
@@ -20,7 +20,7 @@
           </span>
         </div>
         <DialogDescription
-          class="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-md border border-border bg-muted/40 p-3 leading-relaxed"
+          class="mt-1 max-h-72 overflow-y-auto whitespace-pre-wrap rounded-md border border-border bg-muted/40 p-4 leading-relaxed"
         >
           {{ updateNotes }}
         </DialogDescription>
