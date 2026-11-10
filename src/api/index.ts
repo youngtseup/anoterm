@@ -10,6 +10,7 @@ import { toast } from "vue-sonner";
 export * from "./connections";
 export * from "./sftp";
 export * from "./local";
+export * from "./settings";
 
 /** 统一错误提示：兼容 Tauri 返回的字符串错误与 Error 对象 */
 export function notifyError(err: unknown): void {

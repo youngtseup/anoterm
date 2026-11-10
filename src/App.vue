@@ -1,12 +1,12 @@
 <template>
   <div class="flex h-screen flex-col">
     <TitleBar
-      :is-dark="isDark"
+      :is-dark="isEffectiveDark"
       :checking-update="updateState.checking"
       :interactive="settingsOpen"
       :update-status="updateState.status"
       :update-progress="updateState.progress"
-      @home="goHome"
+      @home="handleHome"
       @toggle-theme="toggleTheme"
       @check-update="handleCheckUpdate"
       @open-settings="settingsOpen = true"
@@ -17,7 +17,7 @@
         :groups="groups"
         :active-conn="activeConnId"
         :collapsed="sidebarCollapsed"
-        @home="goHome"
+        @home="handleHome"
         @select="handleSelect"
         @add-group="openAddGroup"
         @rename-group="openRenameGroup"
@@ -193,7 +193,11 @@
     <!-- 更新对话框（下载/安装状态同步给标题栏） -->
     <UpdateDialog ref="updaterRef" @status="handleUpdateStatus" />
 
-    <Toaster :theme="isDark ? 'dark' : 'light'" position="bottom-right" :rich-colors="true" />
+    <Toaster
+      :theme="isEffectiveDark ? 'dark' : 'light'"
+      position="bottom-right"
+      :rich-colors="true"
+    />
 
     <!-- 无边框窗口的边缘缩放热区 -->
     <WindowResizeHandles />
@@ -260,9 +264,14 @@ import { useTabs } from "./composables/useTabs";
 import { useTheme } from "./composables/useTheme";
 
 // ---------- 全局 UI 状态 ----------
-const { isDark, toggleTheme } = useTheme();
+const { isEffectiveDark, toggleTheme } = useTheme();
 const sidebarCollapsed = ref(false);
 const settingsOpen = ref(false);
+
+function handleHome() {
+  if (settingsOpen.value) settingsOpen.value = false;
+  goHome();
+}
 
 // ---------- 更新状态（由 UpdateDialog 同步给标题栏） ----------
 const updaterRef = ref<InstanceType<typeof UpdateDialog> | null>(null);

@@ -21,7 +21,7 @@
       >
         <span class="min-w-0 flex-1 truncate text-[12.5px]">{{ tab.name }}</span>
         <span
-          class="flex size-4 shrink-0 items-center justify-center rounded hover:bg-black/10 hover:text-foreground dark:hover:bg-white/10"
+          class="flex size-4 shrink-0 items-center justify-center rounded hover:bg-foreground/10 hover:text-foreground"
           @click.stop="emit('close', tab.tabId)"
         >
           <X class="size-3" />

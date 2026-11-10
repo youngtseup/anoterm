@@ -15,8 +15,8 @@ mod storage;
 use std::sync::Mutex;
 
 use db_commands::{
-    clear_recent, create_connection, create_group, delete_connection, delete_group, list_groups,
-    list_recent, rename_group, reorder_tree, update_connection,
+    clear_recent, create_connection, create_group, delete_connection, delete_group, get_setting,
+    list_groups, list_recent, rename_group, reorder_tree, set_setting, update_connection,
 };
 use local_fs::{local_drives, local_home, local_list, local_mkdir, local_remove, local_rename};
 use ssh::connect::{ssh_confirm_host_key, ssh_connect, ssh_test_connection};
@@ -104,6 +104,8 @@ pub fn run() {
             reorder_tree,
             list_recent,
             clear_recent,
+            get_setting,
+            set_setting,
             // SSH 命令
             ssh_connect,
             ssh_test_connection,

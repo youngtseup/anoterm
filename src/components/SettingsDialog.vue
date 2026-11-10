@@ -7,7 +7,7 @@
       @pointer-down-outside.prevent
     >
       <DialogTitle class="sr-only">设置</DialogTitle>
-      <DialogDescription class="sr-only">应用设置与版本信息</DialogDescription>
+      <DialogDescription class="sr-only">应用外观设置与版本信息</DialogDescription>
 
       <div class="flex min-h-0 flex-1 flex-col">
         <div class="flex min-h-0 flex-1">
@@ -40,9 +40,9 @@
         <footer
           class="flex items-center justify-end gap-2 border-t border-border bg-muted/20 px-4 py-3"
         >
-          <Button variant="outline" @click="close">关闭</Button>
-          <Button variant="outline" @click="apply">应用</Button>
-          <Button @click="applyAndClose">应用并关闭</Button>
+          <Button variant="outline" :disabled="saving" @click="close">关闭</Button>
+          <Button variant="outline" :disabled="saving" @click="apply">应用</Button>
+          <Button :disabled="saving" @click="applyAndClose">应用并关闭</Button>
         </footer>
       </div>
     </DialogContent>
@@ -55,14 +55,23 @@
  * - 左侧菜单与右侧内容由 sections 配置驱动，每个菜单对应独立组件
  * - 右下角操作：关闭、应用、应用并关闭
  */
-import { computed, markRaw, ref } from "vue";
+import { computed, markRaw, ref, watch } from "vue";
 import { toast } from "vue-sonner";
-import { Info } from "@lucide/vue";
+import { Info, Palette } from "@lucide/vue";
+import { notifyError } from "../api";
+import { useTheme } from "../composables/useTheme";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "./ui/dialog";
+import AppearanceSettings from "./settings/AppearanceSettings.vue";
 import AboutSettings from "./settings/AboutSettings.vue";
 
 const sections = [
+  {
+    id: "appearance",
+    label: "外观",
+    icon: markRaw(Palette),
+    component: markRaw(AppearanceSettings),
+  },
   {
     id: "about",
     label: "关于我们",
@@ -79,26 +88,50 @@ const emit = defineEmits<{
   "update:modelValue": [value: boolean];
 }>();
 
+const { beginAppearanceDraft, discardAppearanceDraft, commitAppearanceDraft } = useTheme();
+
 const open = computed({
   get: () => props.modelValue,
   set: (v: boolean) => emit("update:modelValue", v),
 });
 
-const activeSectionId = ref<SectionId>("about");
+const activeSectionId = ref<SectionId>("appearance");
 const activeSection = computed(
   () => sections.find((section) => section.id === activeSectionId.value) ?? sections[0],
 );
 
+const saving = ref(false);
+
+watch(
+  () => props.modelValue,
+  (isOpen) => {
+    if (isOpen) beginAppearanceDraft();
+    else discardAppearanceDraft();
+  },
+  { immediate: true },
+);
+
 function close() {
+  discardAppearanceDraft();
   open.value = false;
 }
 
-function apply() {
-  toast.success("设置已保存");
+async function apply(): Promise<boolean> {
+  if (saving.value) return false;
+  saving.value = true;
+  try {
+    await commitAppearanceDraft();
+    toast.success("设置已保存");
+    return true;
+  } catch (err) {
+    notifyError(err);
+    return false;
+  } finally {
+    saving.value = false;
+  }
 }
 
-function applyAndClose() {
-  apply();
-  open.value = false;
+async function applyAndClose() {
+  if (await apply()) open.value = false;
 }
 </script>

@@ -29,7 +29,7 @@ const props = defineProps<{ tabId: string; active?: boolean; ready?: boolean }>(
 const emit = defineEmits<{ close: [tabId: string] }>();
 
 const containerRef = ref<HTMLElement | null>(null);
-const { isDark } = useTheme();
+const { isDark, themeRevision } = useTheme();
 
 /**
  * macOS 的剪贴板组合键是 Cmd，Ctrl+C 必须原样发给远端作 SIGINT；
@@ -271,7 +271,7 @@ watch(
 );
 
 // 主题切换：xterm 对 theme 做引用比较，必须整体赋一个新对象才会生效
-watch(isDark, () => {
+watch([isDark, themeRevision], () => {
   term.options.theme = buildTerminalTheme();
 });
 </script>

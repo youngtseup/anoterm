@@ -187,6 +187,10 @@ impl Storage {
                 fingerprint TEXT NOT NULL,
                 added_at INTEGER NOT NULL,
                 PRIMARY KEY (host, port, key_type)
+            );
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
             );",
         )?;
         self.ensure_connection_columns()
@@ -588,6 +592,28 @@ impl Storage {
         tx.execute("DELETE FROM recent_connections", [])?;
         tx.commit()
     }
+
+    pub fn get_setting(&self, key: &str) -> rusqlite::Result<Option<String>> {
+        self.conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?1",
+                params![key],
+                |row| row.get(0),
+            )
+            .optional()
+    }
+
+    pub fn set_setting(&mut self, key: &str, value: &str) -> rusqlite::Result<()> {
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )?;
+        tx.commit()
+    }
 }
 
 #[cfg(test)]
@@ -724,6 +750,30 @@ mod tests {
         );
         assert_eq!(groups[2].id, UNGROUPED_GROUP_ID);
         assert_eq!(groups[2].connections[0].id, "c4");
+
+        drop(storage);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn settings_roundtrip_and_overwrite() {
+        let dir = std::env::temp_dir().join(format!("anoterm-test-settings-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut storage = Storage::open(&dir).unwrap();
+
+        assert_eq!(storage.get_setting("appearance").unwrap(), None);
+        storage
+            .set_setting("appearance", "{\"activeLightId\":\"a\"}")
+            .unwrap();
+        assert_eq!(
+            storage.get_setting("appearance").unwrap(),
+            Some("{\"activeLightId\":\"a\"}".to_string())
+        );
+        storage.set_setting("appearance", "{}").unwrap();
+        assert_eq!(
+            storage.get_setting("appearance").unwrap(),
+            Some("{}".to_string())
+        );
 
         drop(storage);
         std::fs::remove_dir_all(&dir).ok();

@@ -282,12 +282,12 @@ function handleDrag(e: MouseEvent) {
 }
 
 .window-control:hover {
-  background: rgba(0, 0, 0, 0.08);
+  background: color-mix(in srgb, var(--color-foreground) 8%, transparent);
   color: var(--color-foreground);
 }
 
 .dark .window-control:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--color-foreground) 10%, transparent);
 }
 
 .window-control.close:hover {

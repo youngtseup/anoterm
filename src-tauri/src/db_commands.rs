@@ -94,3 +94,15 @@ pub fn clear_recent(state: tauri::State<'_, Db>) -> Result<(), String> {
     let mut storage = state.0.lock().map_err(|e| e.to_string())?;
     storage.clear_recent().map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub fn get_setting(state: tauri::State<'_, Db>, key: String) -> Result<Option<String>, String> {
+    let storage = state.0.lock().map_err(|e| e.to_string())?;
+    storage.get_setting(&key).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_setting(state: tauri::State<'_, Db>, key: String, value: String) -> Result<(), String> {
+    let mut storage = state.0.lock().map_err(|e| e.to_string())?;
+    storage.set_setting(&key, &value).map_err(|e| e.to_string())
+}
