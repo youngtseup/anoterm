@@ -228,6 +228,62 @@ fn expand_tilde(app: &AppHandle, path: &str) -> String {
     path.to_string()
 }
 
+/// SSH 客户端标识。
+///
+/// 部分服务器（网络设备/堡垒机）只放行特定客户端软件：russh 默认的
+/// `SSH-2.0-russh_x.y` 会被拒绝，并在 banner 后附加明文提示，导致客户端
+/// 将文本误读为包长度而握手失败。使用 OpenSSH 兼容标识以获得广泛兼容性。
+const CLIENT_ID: &str = "SSH-2.0-OpenSSH_9.6";
+
+/// 若包长度字段的 4 个字节均为可打印 ASCII，返回对应文本（用于错误提示）。
+fn printable_packet_length_prefix(len: usize) -> Option<String> {
+    if len > u32::MAX as usize {
+        return None;
+    }
+    let bytes = (len as u32).to_be_bytes();
+    if bytes.iter().all(|b| (0x20..=0x7e).contains(b)) {
+        Some(bytes.iter().map(|&b| b as char).collect())
+    } else {
+        None
+    }
+}
+
+/// 算法类别中文名（用于握手错误提示）。
+fn algorithm_kind_label(kind: &russh::AlgorithmKind) -> &'static str {
+    match kind {
+        russh::AlgorithmKind::Kex => "密钥交换",
+        russh::AlgorithmKind::Key => "主机密钥",
+        russh::AlgorithmKind::Cipher => "加密",
+        russh::AlgorithmKind::Mac => "MAC",
+        russh::AlgorithmKind::Compression => "压缩",
+    }
+}
+
+/// 握手错误映射为可读提示（纯函数，便于单测）。
+fn describe_handshake_error(e: &russh::Error) -> String {
+    use russh::Error;
+    match e {
+        Error::PacketSize(len) => {
+            let mut msg = format!("服务器返回的数据不符合 SSH 协议（包长度 {len}");
+            if let Some(prefix) = printable_packet_length_prefix(*len) {
+                msg.push_str(&format!("，收到的数据以“{prefix}…”开头"));
+            }
+            msg.push_str("）。请确认目标端口为 SSH 服务；部分设备还会拒绝不认识的客户端软件标识");
+            msg
+        }
+        Error::Version => "服务器返回了无效的 SSH 版本信息，请确认目标端口为 SSH 服务".to_string(),
+        Error::NoCommonAlgo { kind, .. } => format!(
+            "服务器与客户端没有共同支持的{}算法（设备可能过旧）",
+            algorithm_kind_label(kind)
+        ),
+        Error::Disconnect => {
+            "服务器拒绝了连接或主动断开（可能限制了客户端软件或来源 IP）".to_string()
+        }
+        Error::HUP => "服务器关闭了连接".to_string(),
+        _ => e.to_string(),
+    }
+}
+
 /// 建立 SSH 连接并完成认证（不打开任何通道），供连接与测试连接复用。
 #[allow(clippy::too_many_arguments)]
 async fn establish(
@@ -254,6 +310,7 @@ async fn establish(
 
     // 连接配置：30s 保活（防 NAT/防火墙静默断链）、低延迟
     let config = Arc::new(client::Config {
+        client_id: russh::SshId::Standard(CLIENT_ID.into()),
         keepalive_interval: Some(Duration::from_secs(30)),
         keepalive_max: 3,
         nodelay: true,
@@ -276,7 +333,7 @@ async fn establish(
                 return reason;
             }
         }
-        format!("连接失败: {e}")
+        format!("连接失败: {}", describe_handshake_error(&e))
     })?;
 
     // 清理可能残留的拒绝原因
@@ -607,5 +664,39 @@ mod tests {
             detect_encrypted_by_header("-----BEGIN OPENSSH PRIVATE KEY-----\nxxx"),
             None
         );
+    }
+
+    #[test]
+    fn packet_length_prefix_decodes_printable_text() {
+        assert_eq!(
+            printable_packet_length_prefix(0x446F_206E).as_deref(),
+            Some("Do n")
+        );
+        assert_eq!(printable_packet_length_prefix(0x0000_000B), None);
+        assert_eq!(printable_packet_length_prefix(usize::MAX), None);
+    }
+
+    #[test]
+    fn describe_non_ssh_packet_size() {
+        let msg = describe_handshake_error(&russh::Error::PacketSize(0x446F_206E));
+        assert!(msg.contains("不符合 SSH 协议"));
+        assert!(msg.contains("Do n"));
+        assert!(msg.contains("客户端软件标识"));
+    }
+
+    #[test]
+    fn describe_version_error() {
+        let msg = describe_handshake_error(&russh::Error::Version);
+        assert!(msg.contains("无效的 SSH 版本信息"));
+    }
+
+    #[test]
+    fn describe_no_common_algo_error() {
+        let e = russh::Error::NoCommonAlgo {
+            kind: russh::AlgorithmKind::Cipher,
+            ours: vec!["aes256-ctr".into()],
+            theirs: vec!["3des-cbc".into()],
+        };
+        assert!(describe_handshake_error(&e).contains("加密算法"));
     }
 }
