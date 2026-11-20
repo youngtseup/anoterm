@@ -19,11 +19,16 @@
             <span class="font-mono text-primary">v{{ updateInfo?.version }}</span>
           </span>
         </div>
-        <DialogDescription
-          class="mt-1 max-h-72 overflow-y-auto whitespace-pre-wrap rounded-md border border-border bg-muted/40 p-4 leading-relaxed"
+        <DialogDescription class="sr-only">更新内容</DialogDescription>
+        <div
+          class="prose prose-sm dark:prose-invert max-h-72 max-w-none overflow-y-auto rounded-md border border-border bg-muted/40 p-2.5 prose-a:text-primary prose-a:no-underline prose-a:hover:underline prose-code:before:content-none prose-code:after:content-none prose-pre:bg-muted"
+          @click="handleNotesClick"
         >
-          {{ updateNotes }}
-        </DialogDescription>
+          <template v-if="renderedNotes">
+            <div class="[&>:first-child]:mt-0 [&>:last-child]:mb-0" v-html="renderedNotes" />
+          </template>
+          <template v-else>暂无</template>
+        </div>
       </DialogHeader>
 
       <div v-if="updatePhase !== 'confirm'" class="space-y-2">
@@ -88,10 +93,13 @@
  * - 通过 status 事件向标题栏同步检查/下载状态
  */
 import { computed, markRaw, ref, watchEffect } from "vue";
+import DOMPurify from "dompurify";
 import { toast } from "vue-sonner";
 import { ArrowRight, CircleCheck, Loader2 } from "@lucide/vue";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { marked } from "marked";
 import { Button } from "./ui/button";
 import {
   Dialog,
@@ -169,6 +177,13 @@ const updateNotes = computed(() => {
   return versionOnly.has(compact) ? "暂无" : body;
 });
 
+/** 更新说明 markdown → HTML；notes 来自远程 latest.json，输出前用 DOMPurify 消毒防 XSS */
+const renderedNotes = computed(() => {
+  const notes = updateNotes.value;
+  if (notes === "暂无") return "";
+  return DOMPurify.sanitize(marked.parse(notes, { async: false }));
+});
+
 watchEffect(() => {
   emit("status", {
     checking: checkingUpdate.value,
@@ -181,6 +196,14 @@ watchEffect(() => {
 /** 判断当前是否为 Windows（Windows 下安装完成后应用会自动退出运行安装器） */
 function isWindowsPlatform() {
   return navigator.userAgent.toLowerCase().includes("win");
+}
+
+/** 代理更新说明内的链接点击，交给系统打开（DOMPurify 已剔除 javascript: 等危险协议） */
+function handleNotesClick(event: MouseEvent) {
+  const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>("a[href]");
+  if (!anchor) return;
+  event.preventDefault();
+  openUrl(anchor.href).catch(() => window.open(anchor.href, "_blank"));
 }
 
 function resetUpdateProgress() {
